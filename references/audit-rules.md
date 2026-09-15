@@ -73,3 +73,7 @@ Depth > 3 (top-level = depth 1) → **P2** per affected collection. Suggest flat
 5. **Operation summary** — counts per operation type (merge / rename / re-parent / create / move-bookmarks), ready to be turned into a Phase 2 plan
 
 Every finding row carries machine-checkable evidence (collection ids) so the Phase 2 plan can reference exactly the same objects.
+
+### Report language
+
+The report follows the **user's invocation language**: a request in Simplified Chinese produces a Simplified Chinese report, a request in English produces an English report. The caller detects the language (see SKILL.md Phase 1) and passes `--lang`, or `--lang auto --sample "<request text>"` for CJK-ratio detection with an English fallback. A rendered report is **strictly monolingual** — no mixed-language prose; collection titles, tag names, URLs and rule ids (R1–R10, P0/P1/P2) stay verbatim as proper nouns.

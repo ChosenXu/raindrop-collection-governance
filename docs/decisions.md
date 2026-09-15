@@ -33,3 +33,8 @@ Semantic capabilities (`find_misplaced_bookmarks`, semantic search parameters) a
 ## D8 — Strict boundary with raindrop-bookmark-organizer
 
 Organizer: bookmark metadata (title / note / tags), metadata-first classification, no collection moves. This skill: collection structure and bookmark location, no metadata edits. The only interface between them is organizer's optional "suggested target collection" output, which this skill can turn into executed moves. Keeping the boundary strict prevents both skills from writing the same fields.
+
+## D9 — Report language follows the invocation language, detected at two layers
+
+The report must be in the language the user asked in, and one report must never mix languages. Detection is layered: the agent workflow detects the invocation language (it sees the user's request directly) and passes `--lang` explicitly; the script additionally supports `--lang auto --sample "<request text>"` with a deterministic CJK-ratio check, so the behavior is reproducible and testable without trusting model judgment. Without any signal the report falls back to English, matching the workspace-wide convention that English is the pivot language. Library content (collection titles, tag names, URLs) is data, not prose — it stays verbatim in both languages. All report strings live in one bilingual table, which makes "one report, one language" structural rather than a per-sentence choice.
+

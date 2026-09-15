@@ -2,7 +2,7 @@
 name: raindrop-collection-governance
 description: Use when the user wants to audit, restructure, or govern the collection structure of their Raindrop.io library (via the Raindrop MCP server, REST fallback). Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders combined with a governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / audit / restructure / merge / consolidate). Three-phase workflow: read-only audit with P0/P1/P2 findings, user-confirmed restructuring with rollback snapshots and readback verification, misplaced-bookmark relocation with a free-plan heuristic fallback. Never touches bookmark titles, notes, or tags — that is raindrop-bookmark-organizer's domain.
 agent_created: true
-version: 0.1.0
+version: 0.2.0
 license: MIT
 ---
 
@@ -41,7 +41,7 @@ Free-plan constraint: semantic search parameters and `find_misplaced_bookmarks` 
 
 1. Collect: `find_collections` (full list, includes per-collection counts), `fetch_current_user` (library stats), `find_bookmarks` with `collection_ids: [-1]` (Unsorted backlog details).
 2. Save raw JSON dumps to `/tmp/raindrop-gov-<date>/`.
-3. Run `python3 scripts/audit.py --collections <dump> [--unsorted <dump>] --out <report.md>` — deterministic classification per `references/audit-rules.md`. Python 3.9+, stdlib only.
+3. Detect the **user's invocation language** and pass it to the script: `--lang zh` / `--lang en`, or `--lang auto --sample "<the user's request text>"` (auto detects by CJK ratio, falls back to English without a sample). Run `python3 scripts/audit.py --collections <dump> [--unsorted <dump>] --out <report.md> ...` — deterministic classification per `references/audit-rules.md`. Python 3.9+, stdlib only. The rendered report is strictly monolingual; proper nouns, collection titles and URLs stay verbatim.
 4. Present the report: findings table with evidence (ids, parent chains), P0/P1/P2 recommendations, each mapped to an operation type.
 5. **Stop here.** No writes happen in Phase 1. Wait for the user to pick items.
 

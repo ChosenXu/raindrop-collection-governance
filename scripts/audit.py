@@ -8,7 +8,14 @@ Usage:
     python3 audit.py --collections collections.json \
                      [--unsorted unsorted.json] \
                      [--user user.json] \
+                     [--lang auto|zh|en] [--sample "user's request text"] \
                      [--out report.md]
+
+Language: the caller (agent workflow) detects the user's invocation language
+and passes it via --lang. With --lang auto (default) the report language is
+detected from --sample by CJK-character ratio; without a sample it falls back
+to English. A rendered report is strictly monolingual — proper nouns, titles
+and URLs stay verbatim.
 
 Input formats accepted (both a bare list and an MCP-shaped object work):
     collections.json : [{"collection_id":..., "title":..., "parent_id":...,
@@ -33,6 +40,112 @@ UNSORTED_P0 = 20                # R5: > 20 -> P0
 CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
 HOLLOW_TOP_DIRECT = 2           # R4: direct count <= 2 with children carrying content
 MAX_DEPTH_OK = 3                # R10: depth > 3 is flagged
+CJK_RATIO_ZH = 0.15             # --lang auto: sample is Chinese above this CJK ratio
+
+# ---------------------------------------------------------------- language
+
+def detect_language(sample):
+    """CJK ratio of the sample above CJK_RATIO_ZH -> zh, else en (fallback)."""
+    if not sample:
+        return "en"
+    cjk = len(CJK_RE.findall(sample))
+    letters = len(re.findall(r"[A-Za-z]", sample))
+    total = cjk + letters
+    if total == 0:
+        return "en"
+    return "zh" if cjk / total > CJK_RATIO_ZH else "en"
+
+
+def t(zh, en):
+    """Bilingual string literal: a (zh, en) tuple."""
+    return (zh, en)
+
+
+STR = {
+    "report_title": t("Raindrop 收藏夹盘点报告", "Raindrop Collection Audit Report"),
+    "overview": t("总览", "Overview"),
+    "metric": t("指标", "Metric"),
+    "value": t("数值", "Value"),
+    "collections_total": t("收藏夹数（不含未分类/回收站）", "Collections (excl. Unsorted/Trash)"),
+    "top_level": t("顶层收藏夹", "Top-level collections"),
+    "max_depth": t("最大层级深度", "Max hierarchy depth"),
+    "bookmarks_sum": t("书签总数（直属计数求和）", "Bookmarks (sum of direct counts)"),
+    "unsorted_backlog": t("未分类积压", "Unsorted backlog"),
+    "library_total": t("账号统计总数", "Library total (per account stats)"),
+    "tags": t("标签数", "Tags"),
+    "highlights": t("划线数", "Highlights"),
+    "findings_header": t("发现（{n} 条）", "findings ({n})"),
+    "none": t("无。", "None."),
+    "col_rule": t("规则", "Rule"),
+    "col_finding": t("发现", "Finding"),
+    "col_evidence": t("证据", "Evidence"),
+    "col_suggestion": t("建议", "Suggestion"),
+    "col_operation": t("操作", "Operation"),
+    "op_summary": t("操作汇总", "Operation summary"),
+    "col_operation2": t("操作", "Operation"),
+    "col_findings_n": t("发现数", "Findings"),
+    "footer": t("下一步：从发现中勾选条目，生成第二阶段执行计划。"
+                "未经你明确确认的计划不会触发任何写入。",
+                "Next step: pick items for the Phase 2 execution plan. "
+                "No writes happen without an explicitly confirmed plan."),
+
+    # operations (display labels)
+    "op_merge": t("合并", "merge"),
+    "op_merge_or_rename": t("合并或改名", "merge-or-rename"),
+    "op_rename": t("改名", "rename"),
+    "op_reparent": t("调整层级", "re-parent"),
+    "op_move": t("移动书签", "move-bookmarks"),
+    "op_none": t("无需操作", "none"),
+
+    # rule texts
+    "r1_same_parent": t("同一父级下收藏夹重名：{title!r} ×{n}",
+                        "Duplicate title under the same parent: {title!r} x{n}"),
+    "r1_cross_parent": t("不同父级下同名收藏夹：{title!r} ×{n}",
+                         "Same title across different parents: {title!r} x{n}"),
+    "r1_suggestion": t("改其中一个的名字，或将较小者合并入较大者",
+                       "Rename one, or merge the smaller into the larger"),
+    "r2_problem": t("碎片收藏夹：仅 {n} 条书签", "Fragmented collection: {n} bookmarks"),
+    "r2_suggestion": t("合并候选——先确认主题是否重叠", "Merge candidate — confirm theme overlap first"),
+    "r3_problem": t("空收藏夹", "Empty collection"),
+    "r3_suggestion": t("在应用内改造或移除；本技能从不删除", "Repurpose or remove in the app; this skill never deletes"),
+    "r4_problem": t("空心容器：直属 {d} 条 / 总计 {t} 条（内容在子级）",
+                    "Hollow container: {d} direct / {t} total (children carry content)"),
+    "r4_suggestion": t("作为纯容器可以接受——仅提示", "Acceptable as a pure container — informational only"),
+    "r5_problem": t("未分类积压：{n} 条书签", "Unsorted backlog: {n} bookmarks"),
+    "r5_suggestion": t("批量归位到收藏夹；若元数据缺失可先跑 raindrop-bookmark-organizer",
+                       "Batch-assign to collections; run raindrop-bookmark-organizer first if metadata is missing"),
+    "r5_more": t("……另有 {n} 条", "... and {n} more"),
+    "r6_problem": t("单复数混用：{variants}", "Singular/plural pair: {variants}"),
+    "r6_suggestion": t("选定一种规范形式，然后按重名处理", "Pick one canonical form, then treat as duplicates"),
+    "r7_problem": t("语言混用：以英文为主体的库中出现中文标题", "Language mix: CJK title in an ASCII-dominant library"),
+    "r7_suggestion": t("与主体语言的命名惯例保持一致", "Align with the dominant language convention"),
+    "r8_problem": t("大小写冲突（组 {group!r}）", "Casing conflict inside group {group!r}"),
+    "r8_suggestion": t("选定一种规范大小写", "Pick one canonical casing"),
+    "r9_problem": t("父级 id {pid} 不存在", "Parent id {pid} does not exist"),
+    "r9_suggestion": t("重新挂到已存在的收藏夹下", "Re-parent to an existing collection"),
+    "r10_problem": t("层级超过 {d} 层", "Hierarchy deeper than {d} levels"),
+    "r10_suggestion": t("压平一层", "Flatten one level"),
+    "top_level_txt": t("顶层", "top level"),
+    "in_txt": t("位于", "in"),
+}
+
+OPERATION_LABELS = {
+    "merge": "op_merge",
+    "merge-or-rename": "op_merge_or_rename",
+    "rename": "op_rename",
+    "re-parent": "op_reparent",
+    "move-bookmarks": "op_move",
+    "none": "op_none",
+}
+
+
+def L(key, lang, **kw):
+    """Localized string with optional {kw} interpolation."""
+    idx = 0 if lang == "zh" else 1
+    s = STR[key][idx]
+    if kw:
+        return s.format(**kw)
+    return s
 
 
 def load_records(path, list_key):
@@ -60,7 +173,7 @@ def singular_form(title):
     return n[:-1] if n.endswith("s") and len(n) > 1 else n
 
 
-def parent_chain(col, by_id):
+def parent_chain(col, by_id, lang):
     chain = []
     cur = col
     seen = set()
@@ -69,6 +182,8 @@ def parent_chain(col, by_id):
         chain.append(cur["title"])
         pid = cur.get("parent_id")
         cur = by_id.get(pid) if pid is not None else None
+    if not chain:
+        return L("top_level_txt", lang)
     return " > ".join(reversed(chain))
 
 
@@ -87,6 +202,7 @@ def depth_of(col, by_id):
 
 
 def finding(rule, priority, problem, evidence, suggestion, operation):
+    """problem and suggestion are (zh, en) tuples; evidence is language-neutral data."""
     return {
         "rule": rule,
         "priority": priority,
@@ -109,59 +225,66 @@ def audit(collections, unsorted_items):
 
     # R1 / R8 — duplicate titles (case-insensitive); R8 casing is a sub-case
     groups = {}
-    casing = {}
     for c in governable:
         groups.setdefault(norm_title(c["title"]), []).append(c)
-        casing.setdefault(c["title"], []).append(c)
     for n, members in sorted(groups.items()):
         if len(members) < 2:
             continue
         parents = {m.get("parent_id") for m in members}
-        chain_txt = "; ".join("%s (%s, in %s)" % (m["title"], m["collection_id"],
-                                                  parent_chain(m, by_id) or "top level")
+        chain_txt = "; ".join("%s (%s, %s %s)" % (m["title"], m["collection_id"],
+                                                  L("in_txt", "zh"), parent_chain(m, by_id, "zh"))
                               for m in members)
+        chain_txt_en = "; ".join("%s (%s, in %s)" % (m["title"], m["collection_id"],
+                                                    parent_chain(m, by_id, "en"))
+                                 for m in members)
+        evidence = (chain_txt, chain_txt_en)
         if len(parents) == 1 and None not in parents:
             findings.append(finding(
-                "R1", "P0", "Duplicate title under the same parent: %r x%d" % (members[0]["title"], len(members)),
-                chain_txt,
-                "Rename one, or merge the smaller into the larger",
+                "R1", "P0",
+                (L("r1_same_parent", "zh", title=members[0]["title"], n=len(members)),
+                 L("r1_same_parent", "en", title=members[0]["title"], n=len(members))),
+                evidence,
+                STR["r1_suggestion"],
                 "merge-or-rename"))
         else:
             findings.append(finding(
-                "R1", "P1", "Same title across different parents: %r x%d" % (members[0]["title"], len(members)),
-                chain_txt,
-                "Rename to disambiguate, or merge if themes overlap",
+                "R1", "P1",
+                (L("r1_cross_parent", "zh", title=members[0]["title"], n=len(members)),
+                 L("r1_cross_parent", "en", title=members[0]["title"], n=len(members))),
+                evidence,
+                STR["r1_suggestion"],
                 "merge-or-rename"))
-    for title, members in sorted(casing.items()):
-        lowers = {norm_title(t) for t in casing}
-        if len(members) == 1 and len(lowers) != len(casing):
-            continue  # handled inside R1 groups; exact-case dupes are R1 already
-    # exact-case duplicates (e.g. 'design' and 'Design')
-    for n, members in groups.items():
+        # R8 — exact-case duplicates inside the group
         titles = {m["title"] for m in members}
         if len(titles) > 1:
             findings.append(finding(
-                "R8", "P1", "Casing conflict inside group %r" % n,
-                "; ".join("%s (%s)" % (m["title"], m["collection_id"]) for m in members),
-                "Pick one canonical casing",
+                "R8", "P1",
+                (L("r8_problem", "zh", group=n), L("r8_problem", "en", group=n)),
+                ("; ".join("%s (%s)" % (m["title"], m["collection_id"]) for m in members),) * 2,
+                STR["r8_suggestion"],
                 "rename"))
 
-    # R2 — fragmented collections
+    # R2 / R3 — fragmented and empty collections
     for c in sorted(governable, key=lambda x: x.get("bookmarks_count") or 0):
-        if 0 < (c.get("bookmarks_count") or 0) <= FRAGMENT_THRESHOLD:
+        count = c.get("bookmarks_count") or 0
+        ev = lambda lang: "%s (%s, %s %s)" % (c["title"], c["collection_id"],
+                                              L("in_txt", lang), parent_chain(c, by_id, lang))
+        if 0 < count <= FRAGMENT_THRESHOLD:
             findings.append(finding(
-                "R2", "P2", "Fragmented collection: %d bookmarks" % c["bookmarks_count"],
-                "%s (%s, in %s)" % (c["title"], c["collection_id"], parent_chain(c, by_id) or "top level"),
-                "Merge candidate — confirm theme overlap first",
+                "R2", "P2",
+                (L("r2_problem", "zh", n=count), L("r2_problem", "en", n=count)),
+                (ev("zh"), ev("en")),
+                STR["r2_suggestion"],
                 "merge"))
-        elif c.get("bookmarks_count") == 0:
+        elif count == 0:
             has_children = any(x.get("parent_id") == c["collection_id"] for x in governable)
             if not has_children:
                 # R3 — empty (no children either)
                 findings.append(finding(
-                    "R3", "P1", "Empty collection",
-                    "%s (%s, in %s)" % (c["title"], c["collection_id"], parent_chain(c, by_id) or "top level"),
-                    "Repurpose or remove in the app; this skill never deletes",
+                    "R3", "P1",
+                    (L("r3_problem", "zh"), L("r3_problem", "en")),
+                    (ev("zh"), ev("en")),
+                    STR["r3_suggestion"],
                     "none"))
 
     # R4 — hollow top-level containers
@@ -171,26 +294,33 @@ def audit(collections, unsorted_items):
         total = c.get("total_bookmarks_count") or 0
         if direct <= HOLLOW_TOP_DIRECT and total > direct:
             findings.append(finding(
-                "R4", "P2", "Hollow container: %d direct / %d total (children carry content)" % (direct, total),
-                "%s (%s)" % (c["title"], c["collection_id"]),
-                "Acceptable as a pure container — informational only",
+                "R4", "P2",
+                (L("r4_problem", "zh", d=direct, t=total),
+                 L("r4_problem", "en", d=direct, t=total)),
+                ("%s (%s)" % (c["title"], c["collection_id"]),) * 2,
+                STR["r4_suggestion"],
                 "none"))
 
     # R5 — Unsorted backlog
     n_unsorted = len(unsorted_items)
     if n_unsorted:
         priority = "P0" if n_unsorted > UNSORTED_P0 else "P1"
-        rows = []
-        for b in unsorted_items[:30]:
-            title = b.get("title") or b.get("url") or "?"
-            domain = b.get("domain") or b.get("link") or ""
-            rows.append("- %s (%s)" % (title, domain))
-        if n_unsorted > 30:
-            rows.append("- ... and %d more" % (n_unsorted - 30))
+
+        def unsorted_evidence(lang):
+            rows = []
+            for b in unsorted_items[:30]:
+                title = b.get("title") or b.get("url") or "?"
+                domain = b.get("domain") or b.get("link") or ""
+                rows.append("- %s (%s)" % (title, domain))
+            if n_unsorted > 30:
+                rows.append("- %s" % L("r5_more", lang, n=n_unsorted - 30))
+            return " <br> ".join(rows)
+
         findings.append(finding(
-            "R5", priority, "Unsorted backlog: %d bookmarks" % n_unsorted,
-            "\n".join(rows),
-            "Batch-assign to collections; run raindrop-bookmark-organizer first if metadata is missing",
+            "R5", priority,
+            (L("r5_problem", "zh", n=n_unsorted), L("r5_problem", "en", n=n_unsorted)),
+            (unsorted_evidence("zh"), unsorted_evidence("en")),
+            STR["r5_suggestion"],
             "move-bookmarks"))
 
     # R6 — singular/plural pairs
@@ -200,10 +330,13 @@ def audit(collections, unsorted_items):
     for base, variants in sorted(sing.items()):
         if len(variants) > 1:
             members = [c for c in governable if c["title"] in variants]
+            variants_txt = " vs ".join(sorted(variants))
             findings.append(finding(
-                "R6", "P1", "Singular/plural pair: %s" % " vs ".join(sorted(variants)),
-                "; ".join("%s (%s)" % (m["title"], m["collection_id"]) for m in members),
-                "Pick one canonical form, then treat as duplicates",
+                "R6", "P1",
+                (L("r6_problem", "zh", variants=variants_txt),
+                 L("r6_problem", "en", variants=variants_txt)),
+                ("; ".join("%s (%s)" % (m["title"], m["collection_id"]) for m in members),) * 2,
+                STR["r6_suggestion"],
                 "merge-or-rename"))
 
     # R7 — language mix
@@ -212,9 +345,10 @@ def audit(collections, unsorted_items):
     if governable and len(ascii_titles) / len(governable) >= 0.8 and cjk_titles:
         for c in cjk_titles:
             findings.append(finding(
-                "R7", "P2", "Language mix: CJK title in an ASCII-dominant library",
-                "%s (%s)" % (c["title"], c["collection_id"]),
-                "Align with the dominant language convention",
+                "R7", "P2",
+                (L("r7_problem", "zh"), L("r7_problem", "en")),
+                ("%s (%s)" % (c["title"], c["collection_id"]),) * 2,
+                STR["r7_suggestion"],
                 "rename"))
 
     # R9 — orphaned hierarchy
@@ -222,18 +356,22 @@ def audit(collections, unsorted_items):
         pid = c.get("parent_id")
         if pid is not None and pid not in by_id:
             findings.append(finding(
-                "R9", "P1", "Parent id %s does not exist" % pid,
-                "%s (%s)" % (c["title"], c["collection_id"]),
-                "Re-parent to an existing collection",
+                "R9", "P1",
+                (L("r9_problem", "zh", pid=pid), L("r9_problem", "en", pid=pid)),
+                ("%s (%s)" % (c["title"], c["collection_id"]),) * 2,
+                STR["r9_suggestion"],
                 "re-parent"))
 
     # R10 — over-deep hierarchy
     for c in governable:
         if depth_of(c, by_id) > MAX_DEPTH_OK:
             findings.append(finding(
-                "R10", "P2", "Hierarchy deeper than %d levels" % MAX_DEPTH_OK,
-                "%s (%s, in %s)" % (c["title"], c["collection_id"], parent_chain(c, by_id)),
-                "Flatten one level",
+                "R10", "P2",
+                (L("r10_problem", "zh", d=MAX_DEPTH_OK), L("r10_problem", "en", d=MAX_DEPTH_OK)),
+                ("%s (%s, %s %s)" % (c["title"], c["collection_id"],
+                                     L("in_txt", "zh"), parent_chain(c, by_id, "zh")),
+                 "%s (%s, in %s)" % (c["title"], c["collection_id"], parent_chain(c, by_id, "en"))),
+                STR["r10_suggestion"],
                 "re-parent"))
 
     return governable, findings
@@ -242,11 +380,12 @@ def audit(collections, unsorted_items):
 ORDER = {"P0": 0, "P1": 1, "P2": 2}
 
 
-def render(collections, unsorted_items, stats, findings):
+def render(collections, unsorted_items, stats, findings, lang):
+    idx = 0 if lang == "zh" else 1
     lines = []
-    lines.append("# Raindrop Collection Audit Report")
+    lines.append("# %s" % STR["report_title"][idx])
     lines.append("")
-    lines.append("## Overview")
+    lines.append("## %s" % STR["overview"][idx])
     lines.append("")
     total_bookmarks = sum(c.get("bookmarks_count") or 0 for c in collections)
     top_level = [c for c in collections if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)
@@ -255,49 +394,51 @@ def render(collections, unsorted_items, stats, findings):
     governable = [c for c in collections
                   if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
     max_depth = max((depth_of(c, by_id) for c in governable), default=0)
-    lines.append("| Metric | Value |")
+    lines.append("| %s | %s |" % (STR["metric"][idx], STR["value"][idx]))
     lines.append("|---|---|")
-    lines.append("| Collections (excl. Unsorted/Trash) | %d |" % len(governable))
-    lines.append("| Top-level collections | %d |" % len(top_level))
-    lines.append("| Max hierarchy depth | %d |" % max_depth)
-    lines.append("| Bookmarks (sum of direct counts) | %d |" % total_bookmarks)
-    lines.append("| Unsorted backlog | %d |" % len(unsorted_items))
+    lines.append("| %s | %d |" % (STR["collections_total"][idx], len(governable)))
+    lines.append("| %s | %d |" % (STR["top_level"][idx], len(top_level)))
+    lines.append("| %s | %d |" % (STR["max_depth"][idx], max_depth))
+    lines.append("| %s | %d |" % (STR["bookmarks_sum"][idx], total_bookmarks))
+    lines.append("| %s | %d |" % (STR["unsorted_backlog"][idx], len(unsorted_items)))
     if stats:
         b = stats.get("bookmarks") or {}
-        lines.append("| Library total (per account stats) | %s |" % b.get("total", "?"))
-        lines.append("| Tags | %s |" % stats.get("tags", "?"))
-        lines.append("| Highlights | %s |" % stats.get("highlights", "?"))
+        lines.append("| %s | %s |" % (STR["library_total"][idx], b.get("total", "?")))
+        lines.append("| %s | %s |" % (STR["tags"][idx], stats.get("tags", "?")))
+        lines.append("| %s | %s |" % (STR["highlights"][idx], stats.get("highlights", "?")))
     lines.append("")
 
     for prio in ("P0", "P1", "P2"):
         rows = sorted([f for f in findings if f["priority"] == prio],
                       key=lambda f: f["rule"])
-        lines.append("## %s findings (%d)" % (prio, len(rows)))
+        lines.append("## %s %s" % (prio, STR["findings_header"][idx].format(n=len(rows))))
         lines.append("")
         if not rows:
-            lines.append("None.")
+            lines.append(STR["none"][idx])
             lines.append("")
             continue
-        lines.append("| Rule | Finding | Evidence | Suggestion | Operation |")
+        lines.append("| %s | %s | %s | %s | %s |" % (
+            STR["col_rule"][idx], STR["col_finding"][idx], STR["col_evidence"][idx],
+            STR["col_suggestion"][idx], STR["col_operation"][idx]))
         lines.append("|---|---|---|---|---|")
         for f in rows:
-            evidence = f["evidence"].replace("\n", " <br> ").replace("|", "\\|")
+            evidence = f["evidence"][idx].replace("\n", " <br> ").replace("|", "\\|")
+            op_label = STR[OPERATION_LABELS[f["operation"]]][idx]
             lines.append("| %s | %s | %s | %s | %s |" % (
-                f["rule"], f["problem"], evidence, f["suggestion"], f["operation"]))
+                f["rule"], f["problem"][idx], evidence, f["suggestion"][idx], op_label))
         lines.append("")
 
     ops = {}
     for f in findings:
         ops[f["operation"]] = ops.get(f["operation"], 0) + 1
-    lines.append("## Operation summary")
+    lines.append("## %s" % STR["op_summary"][idx])
     lines.append("")
-    lines.append("| Operation | Findings |")
+    lines.append("| %s | %s |" % (STR["col_operation2"][idx], STR["col_findings_n"][idx]))
     lines.append("|---|---|")
     for op, n in sorted(ops.items()):
-        lines.append("| %s | %d |" % (op, n))
+        lines.append("| %s | %d |" % (STR[OPERATION_LABELS[op]][idx], n))
     lines.append("")
-    lines.append("Next step: pick items for the Phase 2 execution plan. "
-                 "No writes happen without an explicitly confirmed plan.")
+    lines.append(STR["footer"][idx])
     lines.append("")
     return "\n".join(lines)
 
@@ -307,8 +448,13 @@ def main():
     ap.add_argument("--collections", required=True, help="collections JSON dump")
     ap.add_argument("--unsorted", help="Unsorted backlog JSON dump (optional)")
     ap.add_argument("--user", help="fetch_current_user JSON dump (optional)")
+    ap.add_argument("--lang", choices=("auto", "zh", "en"), default="auto",
+                    help="report language: zh / en, or auto (detect from --sample, fallback en)")
+    ap.add_argument("--sample", help="the user's request text, used by --lang auto detection")
     ap.add_argument("--out", help="output Markdown path (default: stdout)")
     args = ap.parse_args()
+
+    lang = detect_language(args.sample) if args.lang == "auto" else args.lang
 
     collections = load_records(args.collections, "collections")
     unsorted_items = load_records(args.unsorted, "bookmarks") if args.unsorted else []
@@ -319,13 +465,13 @@ def main():
             stats = (rec[0].get("user") or {}).get("statistics")
 
     governable, findings = audit(collections, unsorted_items)
-    report = render(collections, unsorted_items, stats, findings)
+    report = render(collections, unsorted_items, stats, findings, lang)
 
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(report)
-        print("report written to %s (%d findings, %d collections scanned)"
-              % (args.out, len(findings), len(governable)))
+        print("report [%s] written to %s (%d findings, %d collections scanned)"
+              % (lang, args.out, len(findings), len(governable)))
     else:
         sys.stdout.write(report)
 
