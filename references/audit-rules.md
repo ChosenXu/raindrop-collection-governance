@@ -62,6 +62,30 @@ Titles differing only by case (`design` vs `Design`) → **P1**, same handling a
 
 Depth > 3 (top-level = depth 1) → **P2** per affected collection. Suggest flattening one level.
 
+## Framework review rules (FR1–FR5)
+
+Tree-level rules for the framework-review mode (`audit.py --mode framework`). FR1–FR3 are deterministic and implemented in the script; FR4–FR5 are agent-layer judgments made from actual collection contents.
+
+### FR1 — Flat-heavy top-level (deterministic)
+
+A top-level collection holding ≥ 40 direct bookmarks and no children → **P1** split recommendation (2–3 thematic sub-collections). This is the extensibility alarm: past this size, retrieval quality degrades without internal structure.
+
+### FR2 — Size dominance (deterministic)
+
+One top-level tree holding > 40% of the library → **P2**, informational. A super-tree is not a defect by itself; the report notes it so growth elsewhere stays visible.
+
+### FR3 — Tiny top-level (deterministic)
+
+A top-level tree holding ≤ 8 bookmarks total → **P2**, review placement. The agent checks whether it belongs under an adjacent domain tree; independence can be legitimate (a coherent special-purpose archive is acceptable — being small is never, by itself, a merge reason).
+
+### FR4 — Semantically overlapping pairs (agent layer)
+
+Two collections whose actual contents answer the same "where do I save X?" question → **P1**. Judge from contents (titles, domains, tags), never from names alone. Outcome is usually a one-sentence boundary rule, not a merge.
+
+### FR5 — Classification-axis mixing (agent layer)
+
+Top-level collections organized by different logics (domain / content type / function / status) coexisting → **P2**, documented rather than "fixed". Mixing is inherent to index-style libraries; flag it when it produces placement ambiguity, and propose explicit tie-breaker rules (e.g. "News = content, Information = lookup tools").
+
 ## Report format
 
 `audit.py` renders Markdown with these sections, in order:

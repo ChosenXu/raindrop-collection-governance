@@ -1,8 +1,8 @@
 ---
 name: raindrop-collection-governance
-description: Use when the user wants to audit, restructure, or govern the collection structure of their Raindrop.io library (via the Raindrop MCP server, REST fallback). Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders combined with a governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / audit / restructure / merge / consolidate). Three-phase workflow: read-only audit with P0/P1/P2 findings, user-confirmed restructuring with rollback snapshots and readback verification, misplaced-bookmark relocation with a free-plan heuristic fallback. Never touches bookmark titles, notes, or tags — that is raindrop-bookmark-organizer's domain.
+description: Use when the user wants to audit, restructure, or govern the collection structure of their Raindrop.io library (via the Raindrop MCP server, REST fallback). Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders combined with a governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / audit / restructure / merge / consolidate). Three-phase workflow: read-only audit with P0/P1/P2 findings, user-confirmed restructuring with rollback snapshots and readback verification, misplaced-bookmark relocation with a free-plan heuristic fallback. A deeper framework-review mode assesses the overall taxonomy (axis mixing, granularity balance, overlapping collections, extensibility; 框架评审 / 结构评审 / framework review). Never touches bookmark titles, notes, or tags — that is raindrop-bookmark-organizer's domain.
 agent_created: true
-version: 0.2.0
+version: 0.3.0
 license: MIT
 ---
 
@@ -44,6 +44,20 @@ Free-plan constraint: semantic search parameters and `find_misplaced_bookmarks` 
 3. Detect the **user's invocation language** and pass it to the script: `--lang zh` / `--lang en`, or `--lang auto --sample "<the user's request text>"` (auto detects by CJK ratio, falls back to English without a sample). Run `python3 scripts/audit.py --collections <dump> [--unsorted <dump>] --out <report.md> ...` — deterministic classification per `references/audit-rules.md`. Python 3.9+, stdlib only. The rendered report is strictly monolingual; proper nouns, collection titles and URLs stay verbatim.
 4. Present the report: findings table with evidence (ids, parent chains), P0/P1/P2 recommendations, each mapped to an operation type.
 5. **Stop here.** No writes happen in Phase 1. Wait for the user to pick items.
+
+### Framework review mode (on request)
+
+Triggered by 框架评审 / 结构评审 / framework review / 评估整体结构. This is a deeper, tree-level assessment above the collection-level audit:
+
+1. Run `python3 scripts/audit.py --mode framework --collections <dump> ...` (same `--lang` handling as above). The script produces the deterministic layer per `references/audit-rules.md` FR1–FR3: top-level size distribution, flat-heavy top-levels, size dominance, tiny top-levels.
+2. The agent then performs the semantic layer, reading collection contents where needed:
+   - **分类轴识别** — which classification logics (domain / content type / function / status) coexist at the top level, and where a new bookmark's placement would be ambiguous;
+   - **语义重叠夹对** — collections whose contents answer the same "where do I save X?" question (compare actual contents, not just names; FR4);
+   - **错位书签线索** — candidates found while reading, listed like any relocation candidate (goes through Phase 2 confirmation);
+   - **扩展性预警** — flat collections approaching the point where retrieval degrades, with split proposals;
+   - **边界规则建议** — one-sentence rules that disambiguate overlapping pairs (e.g. "News = content, Information = lookup tools").
+3. Recommendations are conservative by default: a small focused collection is healthy, fragmentation alone is never a merge reason. Structural changes always go through the Phase 2 confirmation gate.
+4. The report is strictly monolingual, following the invocation language (same `--lang` handling as the audit mode).
 
 ### Phase 2 — Plan & confirm (hard gate)
 

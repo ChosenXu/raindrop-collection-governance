@@ -40,6 +40,9 @@ UNSORTED_P0 = 20                # R5: > 20 -> P0
 CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
 HOLLOW_TOP_DIRECT = 2           # R4: direct count <= 2 with children carrying content
 MAX_DEPTH_OK = 3                # R10: depth > 3 is flagged
+FLAT_HEAVY_THRESHOLD = 40       # FR1: direct >= 40 with no children -> split candidate
+DOMINANCE_RATIO = 0.4           # FR2: one top-level holding > 40% of the library
+TINY_TOP_THRESHOLD = 8          # FR3: top-level total <= 8 -> review placement
 CJK_RATIO_ZH = 0.15             # --lang auto: sample is Chinese above this CJK ratio
 
 # ---------------------------------------------------------------- language
@@ -127,6 +130,29 @@ STR = {
     "r10_suggestion": t("压平一层", "Flatten one level"),
     "top_level_txt": t("顶层", "top level"),
     "in_txt": t("位于", "in"),
+
+    # framework review mode
+    "fw_report_title": t("Raindrop 收藏夹框架评审报告", "Raindrop Collection Framework Review"),
+    "fw_structure": t("顶层结构分布", "Top-level structure"),
+    "fw_col_tree": t("顶层树", "Top-level tree"),
+    "fw_col_direct": t("直属书签", "Direct"),
+    "fw_col_total": t("总计", "Total"),
+    "fw_col_children": t("子夹数", "Children"),
+    "fw_col_depth": t("最大深度", "Max depth"),
+    "fw_col_share": t("占库比", "Share"),
+    "fw_warnings": t("确定性预警", "Deterministic warnings"),
+    "fw_flat_heavy": t("平铺大夹：{title} 直属 {n} 条且无子夹，建议按主题拆分 2-3 个子夹",
+                       "Flat-heavy top-level: {title} holds {n} direct bookmarks with no children — consider splitting into 2-3 sub-collections"),
+    "fw_dominance": t("体量失衡：{title} 占全库 {pct}%，是超级领域树；留意其他顶层的发展空间",
+                      "Size dominance: {title} holds {pct}% of the library — a super-tree; watch growth elsewhere"),
+    "fw_tiny_top": t("微型顶层：{title} 仅 {n} 条，检查是否能并入相邻领域的树",
+                     "Tiny top-level: {title} has only {n} bookmarks — check whether it belongs under an adjacent domain tree"),
+    "fw_semantic_note": t("语义层（由 AI 结合夹内内容判断，非本脚本产出）：分类轴混用分析、语义重叠夹对、"
+                          "错位书签线索与扩展性建议，流程见 SKILL.md 的框架评审节。",
+                          "Semantic layer (judged by the agent from collection contents, not this script): taxonomy-axis "
+                          "mixing, overlapping collection pairs, misfiled bookmarks and extensibility advice — see the "
+                          "framework-review section in SKILL.md."),
+    "fw_none": t("无。", "None."),
 }
 
 OPERATION_LABELS = {
@@ -443,6 +469,77 @@ def render(collections, unsorted_items, stats, findings, lang):
     return "\n".join(lines)
 
 
+def framework(collections):
+    """Deterministic framework metrics per FR1-FR3 (semantic FR4-FR5 are agent-layer)."""
+    by_id = {c.get("collection_id"): c for c in collections if c.get("collection_id") is not None}
+    governable = [c for c in collections
+                  if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
+    tops = [c for c in governable if c.get("parent_id") is None]
+    rows = []
+    for tcol in tops:
+        children = [c for c in governable if c.get("parent_id") == tcol["collection_id"]]
+        total = tcol.get("total_bookmarks_count") or tcol.get("bookmarks_count") or 0
+        max_depth = 1
+        for ch in children:
+            max_depth = max(max_depth, depth_of(ch, by_id))
+        rows.append({
+            "title": tcol["title"],
+            "collection_id": tcol["collection_id"],
+            "direct": tcol.get("bookmarks_count") or 0,
+            "total": total,
+            "children": len(children),
+            "max_depth": max_depth,
+        })
+    rows.sort(key=lambda r: r["total"], reverse=True)
+    lib_total = sum(r["total"] for r in rows) or 1
+    warnings = []
+    for r in rows:
+        if r["children"] == 0 and r["total"] >= FLAT_HEAVY_THRESHOLD:
+            warnings.append(("FR1", L("fw_flat_heavy", "zh", title=r["title"], n=r["total"]),
+                             L("fw_flat_heavy", "en", title=r["title"], n=r["total"])))
+        if r["total"] / lib_total > DOMINANCE_RATIO:
+            warnings.append(("FR2", L("fw_dominance", "zh", title=r["title"],
+                                      pct=round(r["total"] / lib_total * 100)),
+                             L("fw_dominance", "en", title=r["title"],
+                               pct=round(r["total"] / lib_total * 100))))
+        if r["total"] <= TINY_TOP_THRESHOLD:
+            warnings.append(("FR3", L("fw_tiny_top", "zh", title=r["title"], n=r["total"]),
+                             L("fw_tiny_top", "en", title=r["title"], n=r["total"])))
+    return rows, lib_total, warnings
+
+
+def render_framework(collections, lang):
+    idx = 0 if lang == "zh" else 1
+    rows, lib_total, warnings = framework(collections)
+    lines = []
+    lines.append("# %s" % STR["fw_report_title"][idx])
+    lines.append("")
+    lines.append("## %s" % STR["fw_structure"][idx])
+    lines.append("")
+    lines.append("| %s | %s | %s | %s | %s | %s |" % (
+        STR["fw_col_tree"][idx], STR["fw_col_direct"][idx], STR["fw_col_total"][idx],
+        STR["fw_col_children"][idx], STR["fw_col_depth"][idx], STR["fw_col_share"][idx]))
+    lines.append("|---|---|---|---|---|---|")
+    for r in rows:
+        lines.append("| %s | %d | %d | %d | %d | %d%% |" % (
+            r["title"], r["direct"], r["total"], r["children"],
+            r["max_depth"], round(r["total"] / lib_total * 100)))
+    lines.append("")
+    lines.append("## %s" % STR["fw_warnings"][idx])
+    lines.append("")
+    if not warnings:
+        lines.append(STR["fw_none"][idx])
+    else:
+        lines.append("| %s | %s |" % (STR["col_rule"][idx], STR["col_finding"][idx]))
+        lines.append("|---|---|")
+        for rule, zh, en in warnings:
+            lines.append("| %s | %s |" % (rule, (zh, en)[idx]))
+    lines.append("")
+    lines.append(STR["fw_semantic_note"][idx])
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Render a Raindrop collection audit report.")
     ap.add_argument("--collections", required=True, help="collections JSON dump")
@@ -451,6 +548,8 @@ def main():
     ap.add_argument("--lang", choices=("auto", "zh", "en"), default="auto",
                     help="report language: zh / en, or auto (detect from --sample, fallback en)")
     ap.add_argument("--sample", help="the user's request text, used by --lang auto detection")
+    ap.add_argument("--mode", choices=("audit", "framework"), default="audit",
+                    help="audit = collection-level findings (R1-R10); framework = top-level structure review (FR1-FR3)")
     ap.add_argument("--out", help="output Markdown path (default: stdout)")
     args = ap.parse_args()
 
@@ -464,14 +563,21 @@ def main():
         if rec and isinstance(rec[0], dict):
             stats = (rec[0].get("user") or {}).get("statistics")
 
-    governable, findings = audit(collections, unsorted_items)
-    report = render(collections, unsorted_items, stats, findings, lang)
+    if args.mode == "framework":
+        report = render_framework(collections, lang)
+        n_out = 0
+    else:
+        governable, findings = audit(collections, unsorted_items)
+        report = render(collections, unsorted_items, stats, findings, lang)
+        n_out = len(findings)
 
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(report)
-        print("report [%s] written to %s (%d findings, %d collections scanned)"
-              % (lang, args.out, len(findings), len(governable)))
+        print("report [%s/%s] written to %s (%s, %d collections scanned)"
+              % (lang, args.mode, args.out,
+                 "%d findings" % n_out if args.mode == "audit" else "framework metrics",
+                 len(collections)))
     else:
         sys.stdout.write(report)
 
