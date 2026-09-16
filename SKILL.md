@@ -2,7 +2,7 @@
 name: raindrop-collection-governance
 description: Use when the user wants to audit, restructure, or govern the collection structure of their Raindrop.io library (via the Raindrop MCP server, REST fallback). Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders combined with a governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / audit / restructure / merge / consolidate). Three-phase workflow: read-only audit with P0/P1/P2 findings, user-confirmed restructuring with rollback snapshots and readback verification, misplaced-bookmark relocation with a free-plan heuristic fallback. A deeper framework-review mode assesses the overall taxonomy (axis mixing, granularity balance, overlapping collections, extensibility; 框架评审 / 结构评审 / framework review). Never touches bookmark titles, notes, or tags — that is raindrop-bookmark-organizer's domain.
 agent_created: true
-version: 0.3.0
+version: 0.3.1
 license: MIT
 ---
 
@@ -21,7 +21,7 @@ Division of labor: this skill owns **where bookmarks live** (structure). `raindr
 | Channel | Used for |
 |---|---|
 | Raindrop MCP server (primary) | all reads, all writes, readback verification |
-| Raindrop REST API v1 (`api.raindrop.io/rest/v1/...`, token in `env RD_API_TOKEN`) | documented fallback only, not implemented in 0.1.0 |
+| Raindrop REST API v1 (`api.raindrop.io/rest/v1/...`, token in `env RD_API_TOKEN`) | documented fallback only, not implemented |
 
 Free-plan constraint: semantic search parameters and `find_misplaced_bookmarks` are Pro-gated. Never rely on them as the only path — the relocation phase must work with the heuristic described below.
 
@@ -33,6 +33,7 @@ Free-plan constraint: semantic search parameters and `find_misplaced_bookmarks` 
 - **Snapshot before write.** Before the first write of a session, save the affected collections' state (id, title, parent_id) and affected bookmark→collection mappings to an undo file in `/tmp/`.
 - **Verify every write.** After each batch, read back the affected objects and report `requested / verified_ok`. Never trust success counters alone (Raindrop APIs have lied before — e.g. `delete_tags` reports success for nonexistent tags).
 - **Small batches.** ≤10 operations per batch; stop on first failure and report.
+- **Use the right tool family.** Collection operations (create / rename / re-parent / merge) go through the collection tools (`create_collections` / `update_collections` / `merge_collections`); bookmark moves go through the bookmark tool (`update_bookmarks`). Never mix them in one call — the schemas differ and a mixed call fails validation before executing.
 - **All reports and runtime data go to `/tmp/`**, never into the skill folder or any repo.
 
 ## Workflow
@@ -76,7 +77,7 @@ Order of execution once confirmed: **create → rename → re-parent → move bo
 
 1. Write the undo snapshot to `/tmp/`.
 2. Execute in the order above, batches ≤10, readback verification after each batch (`find_collections` / `find_bookmarks`).
-3. Append a JSONL checkpoint after every batch (`/tmp/raindrop-gov-<date>/worklog.jsonl`) so a session can resume.
+3. Append a JSONL checkpoint after every batch (`/tmp/raindrop-gov-<date>/worklog.jsonl`) so a session can resume. One JSON object per line, fields: `ts` (ISO-ish timestamp), `phase` (e.g. `relocate-unsorted` / `dedup-renames` / `database-split`), `batch` (number or final summary marker), `ops` (operation count), `bookmarks` (bookmark count if applicable), `verified_ok` (readback-confirmed count), `undo_file` (snapshot path). Resume = read the last line, re-verify it, continue from the next unverified item.
 4. Final pass: re-read all affected objects, diff against the plan, report `requested / verified_ok / UNVERIFIED` per operation. Final report to `/tmp/`.
 
 ### Relocating misplaced bookmarks (Phase 1 extension / standalone)

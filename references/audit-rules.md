@@ -101,3 +101,18 @@ Every finding row carries machine-checkable evidence (collection ids) so the Pha
 ### Report language
 
 The report follows the **user's invocation language**: a request in Simplified Chinese produces a Simplified Chinese report, a request in English produces an English report. The caller detects the language (see SKILL.md Phase 1) and passes `--lang`, or `--lang auto --sample "<request text>"` for CJK-ratio detection with an English fallback. A rendered report is **strictly monolingual** — no mixed-language prose; collection titles, tag names, URLs and rule ids (R1–R10, P0/P1/P2) stay verbatim as proper nouns.
+
+## Framework report format
+
+`audit.py --mode framework` renders the deterministic layer; the agent appends the semantic layer. Sections in order:
+
+1. **Top-level structure** (script) — one row per top-level tree: title, direct bookmarks, total, children count, max depth, share of library
+2. **Deterministic warnings** (script) — table: rule (FR1–FR3), finding
+3. **Semantic layer** (agent) — four subsections, each with evidence:
+   - **Classification axes** — which logics (domain / content type / function / status) coexist at the top level; where placement of a new bookmark would be ambiguous (FR5)
+   - **Overlapping pairs & boundary rules** — each pair judged from contents, followed by a one-sentence boundary rule (FR4)
+   - **Misfiled bookmark leads** — candidates found while reading, listed in the same table shape as audit findings, routed to Phase 2 confirmation
+   - **Extensibility advice** — flat collections nearing the split threshold, with concrete sub-collection proposals
+4. **Operation summary** — same shape as the audit report, so approved items flow into a Phase 2 plan unchanged
+
+Conservative stance is part of the format: every "small but focused" collection is reported as healthy unless evidence says otherwise, and a framework review that ends in zero structural changes is a valid outcome.
