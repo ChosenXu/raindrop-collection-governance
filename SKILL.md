@@ -1,8 +1,8 @@
 ---
 name: raindrop-collection-governance
-description: Use when the user wants to audit, restructure, or govern the collection structure of their Raindrop.io library (via the Raindrop MCP server, REST fallback). Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders combined with a governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / audit / restructure / merge / consolidate). Three-phase workflow: read-only audit with P0/P1/P2 findings, user-confirmed restructuring with rollback snapshots and readback verification, misplaced-bookmark relocation with a free-plan heuristic fallback. A deeper framework-review mode assesses the overall taxonomy (axis mixing, granularity balance, overlapping collections, extensibility; 框架评审 / 结构评审 / framework review). Never touches bookmark titles, notes, or tags — that is raindrop-bookmark-organizer's domain.
+description: Use when the user wants to audit, restructure, or govern their Raindrop.io collection structure. Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders with governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / 框架评审 / audit / restructure / merge / framework review). Read-only P0/P1/P2 audit, confirmed restructuring with rollback and readback verification, misplaced-bookmark relocation, framework-review mode. Never edits bookmark titles, notes, or tags — raindrop-bookmark-organizer's domain.
 agent_created: true
-version: 0.3.1
+version: 0.3.2
 license: MIT
 ---
 
@@ -72,6 +72,8 @@ For every user-approved finding, render an operation plan:
 | Rollback | recreate source, move bookmarks back (undo file) |
 
 Order of execution once confirmed: **create → rename → re-parent → move bookmarks → merge (always last, it deletes sources)**.
+
+Rollback note for merges: `merge_collections` removes the source collection, and a re-created source gets a **new collection id** — the original id recorded in the undo file is a record only. After a merge rollback, always reference the re-created id in all subsequent operations and verification.
 
 ### Phase 3 — Execute & verify
 
