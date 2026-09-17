@@ -2,7 +2,7 @@
 name: raindrop-collection-governance
 description: Use when the user wants to audit, restructure, or govern their Raindrop.io collection structure. Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders with governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / 框架评审 / audit / restructure / merge / framework review). Read-only P0/P1/P2 audit, confirmed restructuring with rollback and readback verification, misplaced-bookmark relocation, framework-review mode. Never edits bookmark titles, notes, or tags — raindrop-bookmark-organizer's domain.
 agent_created: true
-version: 0.3.3
+version: 1.0.0
 license: MIT
 ---
 
