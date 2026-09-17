@@ -1,6 +1,6 @@
 # Raindrop Collection Governance
 
-English | 简体中文（发布时提供）
+English | [简体中文](README.zh-CN.md)
 
 An [Agent Skills](https://agentskills.io)-compatible skill: **govern the collection (folder) structure of a [Raindrop.io](https://raindrop.io/) library** — read-only audits, user-confirmed restructuring, and misplaced-bookmark relocation. Works in any agent that reads the Agent Skills standard (Claude Code, Codex CLI, Gemini CLI, GitHub Copilot, Cursor, WorkBuddy…).
 
