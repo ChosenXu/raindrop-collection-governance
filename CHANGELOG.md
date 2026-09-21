@@ -6,6 +6,20 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.1.0] - 2026-09-21
+
+### Added / 新增
+
+- Optional Jev pre-screener (`scripts/jev_precheck.py`): blind-classifies bookmarks against user-defined categories and outputs relocation candidates with confidence bands (high ≥0.85 / medium ≥0.50 / low discarded). Flat mode validated on a 58-bookmark labeled exam — all 8 known misfiled bookmarks flagged and routed correctly (confidence 0.79–1.00); tree-descent mode ships as experimental.
+  可选 Jev 预筛器（`scripts/jev_precheck.py`）：将书签对使用者定义的类别做盲分类，输出带置信分档（高 ≥0.85 / 中 ≥0.50 / 低丢弃）的归位候选。flat 模式经 58 条标注考卷验证——8/8 已知错位书签全部标记并正确路由（置信 0.79–1.00）；树下降模式为实验性。
+- Privacy disclosure in SKILL.md: the pre-screener sends bookmark titles/tags/domains to the third-party TypeSafe API; the heuristic path remains the default and works fully offline.
+  SKILL.md 增补隐私说明：预筛器会将书签标题/标签/域名发送给第三方 TypeSafe API；启发式路径仍为默认，完全可离线。
+
+### Notes / 说明
+
+- Version bumped 1.0.1 → 1.1.0 (MINOR: new optional capability); default behavior unchanged.
+  版本 1.0.1 → 1.1.0（MINOR：新增可选能力）；默认行为无任何变化。
+
 ## [1.0.1] - 2026-09-17
 
 ### Added / 新增

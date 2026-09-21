@@ -2,7 +2,7 @@
 name: raindrop-collection-governance
 description: Use when the user wants to audit, restructure, or govern their Raindrop.io collection structure. Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders with governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / 框架评审 / audit / restructure / merge / framework review). Read-only P0/P1/P2 audit, confirmed restructuring with rollback and readback verification, misplaced-bookmark relocation, framework-review mode. Never edits bookmark titles, notes, or tags — raindrop-bookmark-organizer's domain.
 agent_created: true
-version: 1.0.1
+version: 1.1.0
 license: MIT
 ---
 
@@ -21,6 +21,7 @@ Division of labor: this skill owns **where bookmarks live** (structure). `raindr
 | Channel | Used for |
 |---|---|
 | Raindrop MCP server (primary) | all reads, all writes, readback verification |
+| TypeSafe Jev API (optional) | semantic pre-check for relocation via `scripts/jev_precheck.py` — requires `TYPESAFE_API_KEY` + `typesafe-sdk` (Python ≥3.10); **sends bookmark titles/tags/domains to the third-party TypeSafe API** |
 | Raindrop REST API v1 (`api.raindrop.io/rest/v1/...`, token in `env RD_API_TOKEN`) | documented fallback only, not implemented |
 
 Free-plan constraint: semantic search parameters and `find_misplaced_bookmarks` are Pro-gated. Never rely on them as the only path — the relocation phase must work with the heuristic described below.
@@ -88,12 +89,25 @@ Rollback note for merges: `merge_collections` removes the source collection, and
 - Free plan (heuristic): for each bookmark, compare its tags / domain / title keywords against the theme of its current collection. Flag mismatches as candidates. Never auto-move — candidates go through Phase 2 confirmation like any other operation.
 - Cap candidate review at 150 per pass; paginate if needed.
 
+### Optional Jev pre-screener (experimental)
+
+`scripts/jev_precheck.py` blind-classifies bookmarks against **user-defined categories** (a JSON file mapping category descriptions to collection ids) and emits relocation candidates with confidence bands (high ≥0.85 / medium ≥0.50 / low discarded), written as JSON next to the input dumps. Validated on a 58-bookmark labeled exam: all 8 known misfiled bookmarks flagged and routed correctly (confidence 0.79–1.00).
+
+Rules that make it work (from calibration — violating these reproduces failures):
+
+1. **Blind state**: the model sees only the bookmark (title / tags / domain). Never include the current collection's self-description — it leaks the answer.
+2. **Well-described flat categories**: descriptions must be self-standing; one concept must map to one category. Where the library gives one concept two homes, the mismatch is an FR4 finding, not a relocation candidate.
+3. **Code does the comparing**: the model classifies; the script compares with the current location and assigns bands.
+
+Caveats: experimental; the script and `typesafe-sdk` require Python ≥3.10; each bookmark costs 1–3 Jev calls (~600–1200 tokens) and bookmark titles/tags/domains are sent to the third-party TypeSafe API — this is why the pre-screener is optional and never default. Without it (no key / no SDK / service down), relocation falls back to the heuristic above with zero loss of core capability.
+
 ## Supporting files
 
 Load only when needed:
 
 - `references/audit-rules.md` — detection rules and P0/P1/P2 criteria (load before Phase 1)
 - `scripts/audit.py` — deterministic audit report renderer (Phase 1)
+- `scripts/jev_precheck.py` — optional Jev pre-screener for relocation candidates (experimental)
 - `docs/decisions.md` — architecture decisions and rationale
 
 ## Out of scope (0.1.0)
