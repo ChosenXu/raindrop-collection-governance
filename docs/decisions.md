@@ -46,3 +46,13 @@ The framework-review mode answers tree-level questions (is the taxonomy sound, w
 
 The package validator flags `~/.claude/skills/`, `/tmp/` and similar as `absolute_path` errors. In this skill those paths are subject matter: `~/.<agent>/skills/` is the install matrix every multi-platform skill must document, and `/tmp/raindrop-gov-<date>/` is the mandated report destination. Hardcoding a real user path (`/Users/<name>/…`) would be a defect; none exists in the package. The sibling repositories carry the same pattern and the same validator findings, so these findings are recorded as a known false-positive class instead of being "fixed" by removing the paths.
 
+## D12 — Jev auto-enables by detection and only ever adds evidence
+
+When the environment is ready (API key present, `typesafe-sdk` importable, Python ≥3.10, one tiny probe call succeeds), the pre-screener runs automatically during relocation work — no manual step. Three design decisions make this safe:
+
+1. **Additive, not substitutive.** The heuristic findings are always produced; Jev candidates are merged on top and every candidate is labeled with its source (`jev` / `heuristic` / `both`). Environments without Jev behave exactly as before, so auto-enable can never reduce capability.
+2. **Degradation at every layer.** Detection failure, auth failure, network errors and mid-run failures all degrade to the pure-heuristic path; mid-run failures keep completed items and hand the failed bookmark ids back to the heuristic. `RAINDROP_GOV_JEV=off` restores the pre-auto behavior entirely.
+3. **Scoped cost.** The pre-screener runs on the bookmarks being relocated-scanned, not unboundedly; probe is local-only unless `--probe-call` is passed, so detection costs nothing when the environment is incomplete.
+
+The confirmation gate is untouched: auto-enable automates evidence gathering, never decisions or writes.
+

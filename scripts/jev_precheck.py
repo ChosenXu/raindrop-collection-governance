@@ -35,10 +35,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
-    from typesafe_sdk import Choice, TypeSafeClient
-except ImportError:
-    sys.exit("typesafe-sdk is not installed. This pre-screener is optional — install it "
-             "with `pip install typesafe-sdk` (Python >= 3.10) or use the heuristic path.")
+    from typesafe_sdk import Choice, Noul, TypeSafeClient
+    SDK_AVAILABLE = True
+    SDK_IMPORT_ERROR = None
+except Exception as _sdk_exc:  # ImportError or a broken installation
+    SDK_AVAILABLE = False
+    SDK_IMPORT_ERROR = str(_sdk_exc)
+
+OPT_OUT_ENV = "RAINDROP_GOV_JEV"
+PY_MIN = (3, 10)
 
 HIGH_DEFAULT = 0.85
 MEDIUM_DEFAULT = 0.50
@@ -82,6 +87,48 @@ def node_desc(node, children):
     if kids:
         d += " — subcategories: " + ", ".join(k["title"] for k in kids)
     return d
+
+
+def python_ok():
+    ok = sys.version_info >= PY_MIN
+    return ok, "%d.%d.%d" % sys.version_info[:3]
+
+
+def probe(do_auth_call=False):
+    """Environment verdict. Local-only by default; do_auth_call adds one tiny
+    request to verify the key. Never raises — every failure becomes a status."""
+    py_ok, py_ver = python_ok()
+    verdict = {
+        "opt_out": os.environ.get(OPT_OUT_ENV, "").strip().lower() in ("off", "0", "false", "no"),
+        "api_key": bool(os.environ.get("TYPESAFE_API_KEY")),
+        "sdk_available": SDK_AVAILABLE,
+        "sdk_error": SDK_IMPORT_ERROR,
+        "python_ok": py_ok,
+        "python_version": py_ver,
+        "auth": "not_tested",
+        "ready": False,
+    }
+    if verdict["opt_out"]:
+        verdict["auth"] = "skipped (opt-out)"
+        return verdict
+    if not (verdict["api_key"] and SDK_AVAILABLE and py_ok):
+        return verdict
+    if not do_auth_call:
+        verdict["ready"] = True  # local checks passed; auth untested
+        return verdict
+    try:
+        client = TypeSafeClient()
+        r = client.system_one(
+            state="ping",
+            questions={"p": Noul(instructions="Is this a ping?")},
+        )
+        n = getattr(r.answers["p"], "noul", -1)
+        verdict["auth"] = "ok" if 0 <= n <= 1 else "unexpected_response"
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        verdict["auth"] = "auth_failed" if ("401" in msg or "403" in msg) else "unreachable"
+    verdict["ready"] = verdict["auth"] == "ok"
+    return verdict
 
 
 def classify_flat(client, bm, categories):
@@ -168,8 +215,8 @@ def main():
     ap = argparse.ArgumentParser(
         description="Optional Jev pre-screener: blind-classify bookmarks against the "
                     "collection tree and output relocation candidates (read-only).")
-    ap.add_argument("--collections", required=True, help="find_collections JSON dump")
-    ap.add_argument("--bookmarks", required=True,
+    ap.add_argument("--collections", required=False, help="find_collections JSON dump")
+    ap.add_argument("--bookmarks", required=False,
                     help="bookmarks JSON dump: [{bookmark_id, title, tags, domain?, collection_id}, ...]")
     ap.add_argument("--out", help="output JSON path (default: jev-precheck-results.json next to --bookmarks)")
     ap.add_argument("--workers", type=int, default=4)
@@ -180,11 +227,30 @@ def main():
                     help="flat-mode category definitions: {\"<name>\": {\"description\": str, "
                          "\"collections\": [ids]}} — validated strategy. Omit for tree-descent "
                          "mode (experimental: imprecise on trees with overlapping collections).")
+    ap.add_argument("--probe", action="store_true",
+                    help="print the environment verdict as JSON and exit (local checks only)")
+    ap.add_argument("--probe-call", action="store_true",
+                    help="with --probe: also send one tiny request to verify authentication")
     args = ap.parse_args()
 
-    if not os.environ.get("TYPESAFE_API_KEY"):
-        sys.exit("TYPESAFE_API_KEY is not set. This pre-screener is optional — the skill's "
-                 "heuristic path works without it.")
+    if args.probe:
+        print(json.dumps(probe(do_auth_call=args.probe_call), ensure_ascii=False, indent=2))
+        return
+    if not args.collections or not args.bookmarks:
+        ap.error("--collections and --bookmarks are required (unless running --probe)")
+
+    verdict = probe()
+    if verdict["opt_out"]:
+        print(json.dumps({"jev": "disabled", "reason": "%s is set" % OPT_OUT_ENV}))
+        return
+    if not verdict["api_key"]:
+        sys.exit(json.dumps({"jev": "not_configured", "reason": "TYPESAFE_API_KEY is not set"}))
+    if not verdict["sdk_available"]:
+        sys.exit(json.dumps({"jev": "unavailable",
+                             "reason": "typesafe-sdk import failed: %s" % verdict["sdk_error"]}))
+    if not verdict["python_ok"]:
+        sys.exit(json.dumps({"jev": "unavailable",
+                             "reason": "python >= 3.10 required, found %s" % verdict["python_version"]}))
 
     collections = load_dump(args.collections, "collections")
     bookmarks = load_dump(args.bookmarks, "bookmarks")
@@ -253,13 +319,14 @@ def main():
         }
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futs = [pool.submit(work, bm) for bm in bookmarks]
+        futs = [(bm, pool.submit(work, bm)) for bm in bookmarks]
         done = 0
-        for fut in as_completed(futs):
+        for bm, fut in futs:
             try:
                 results.append(fut.result())
             except Exception as exc:  # noqa: BLE001
-                errors.append(str(exc)[:200])
+                errors.append({"bookmark_id": bm.get("bookmark_id"),
+                               "error": str(exc)[:200]})
             done += 1
             if done % 25 == 0 or done == len(bookmarks):
                 print("progress %d/%d errors=%d elapsed=%.0fs"
@@ -278,6 +345,8 @@ def main():
         "n_bookmarks": len(bookmarks),
         "n_results": len(results),
         "n_errors": len(errors),
+        "partial_failure": bool(errors) and bool(results),
+        "failed_bookmark_ids": [e.get("bookmark_id") for e in errors],
         "bands": bands,
         "jev_calls": calls_total,
         "elapsed_seconds": round(time.time() - t0, 1),

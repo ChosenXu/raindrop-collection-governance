@@ -6,6 +6,22 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.2.0] - 2026-09-21
+
+### Changed / 变更
+
+- The Jev pre-screener now auto-enables when the environment is ready (API key + importable SDK + Python ≥3.10, verified by one tiny probe call) — no manual step. Its candidates are merged with the heuristic findings and labeled by source (`jev` / `heuristic` / `both`).
+  环境就绪时 Jev 预筛器自动启用（API key + 可导入的 SDK + Python ≥3.10，经一次微型探针调用核验）——无需手动操作；候选与启发式结果合并并标注来源（`jev` / `heuristic` / `both`）。
+- Mid-run failures keep completed items and hand the failed bookmark ids back to the heuristic instead of losing them.
+  跑批中途失败时保留已完成项，并把失败的书签 id 交回启发式补齐，不再丢失。
+- New opt-out switch `RAINDROP_GOV_JEV=off` restores the pre-auto behavior entirely; new `--probe` / `--probe-call` modes expose the environment verdict as JSON.
+  新增关闭开关 `RAINDROP_GOV_JEV=off`（完全恢复自动启用前的行为）；新增 `--probe` / `--probe-call` 探测模式，以 JSON 输出环境结论。
+
+### Notes / 说明
+
+- Version bumped 1.1.0 → 1.2.0 (MINOR: behavior change — auto-enable when detected; environments without Jev behave exactly as before).
+  版本 1.1.0 → 1.2.0（MINOR：行为变更——检测到即自动启用；无 Jev 的环境与之前完全一致）。
+
 ## [1.1.0] - 2026-09-21
 
 ### Added / 新增
