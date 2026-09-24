@@ -2,7 +2,7 @@
 name: raindrop-collection-governance
 description: Use when the user wants to audit, restructure, or govern their Raindrop.io collection structure. Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders with governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / 框架评审 / audit / restructure / merge / framework review). Read-only P0/P1/P2 audit, confirmed restructuring with rollback and readback verification, misplaced-bookmark relocation, framework-review mode. Never edits bookmark titles, notes, or tags — raindrop-bookmark-organizer's domain.
 agent_created: true
-version: 1.2.0
+version: 1.2.1
 license: MIT
 ---
 
@@ -21,7 +21,7 @@ Division of labor: this skill owns **where bookmarks live** (structure). `raindr
 | Channel | Used for |
 |---|---|
 | Raindrop MCP server (primary) | all reads, all writes, readback verification |
-| TypeSafe Jev API (auto-enabled when detected; opt-out `RAINDROP_GOV_JEV=off`) | semantic pre-check for relocation via `scripts/jev_precheck.py` — requires `TYPESAFE_API_KEY` + `typesafe-sdk` (Python ≥3.10); **sends bookmark titles/tags/domains to the third-party TypeSafe API** |
+| TypeSafe Jev API (auto-enabled when detected; opt-out `RAINDROP_GOV_JEV=off`) | semantic pre-check for relocation via `scripts/jev_precheck.py` — requires `TYPESAFE_API_KEY` + `typesafe-sdk>=0.7,<0.8` (Python ≥3.10); **sends bookmark titles/tags/domains to the third-party TypeSafe API** |
 | Raindrop REST API v1 (`api.raindrop.io/rest/v1/...`, token in `env RD_API_TOKEN`) | documented fallback only, not implemented |
 
 Free-plan constraint: semantic search parameters and `find_misplaced_bookmarks` are Pro-gated. Never rely on them as the only path — the relocation phase must work with the heuristic described below.
@@ -100,7 +100,7 @@ Rules that make it work (from calibration — violating these reproduces failure
 2. **Well-described flat categories**: descriptions must be self-standing; one concept must map to one category. Where the library gives one concept two homes, the mismatch is an FR4 finding, not a relocation candidate.
 3. **Code does the comparing**: the model classifies; the script compares with the current location and assigns bands.
 
-Caveats: experimental; the script and `typesafe-sdk` require Python ≥3.10; each bookmark costs 1–3 Jev calls (~600–1200 tokens) and bookmark titles/tags/domains are sent to the third-party TypeSafe API. The pre-screener only ever **adds** candidates on top of the heuristic findings — it never replaces them — and its scope is limited to the bookmarks being relocated-scanned. Detection failure, auth failure and mid-run errors all degrade to the pure-heuristic path with the Jev status disclosed in the report.
+Caveats: experimental; the script and `typesafe-sdk` (pinned `>=0.7,<0.8`) require Python ≥3.10; each bookmark costs 1–3 Jev calls (~600–1200 tokens) and bookmark titles/tags/domains are sent to the third-party TypeSafe API. The pre-screener only ever **adds** candidates on top of the heuristic findings — it never replaces them — and its scope is limited to the bookmarks being relocated-scanned. Detection failure, auth failure and mid-run errors all degrade to the pure-heuristic path with the Jev status disclosed in the report.
 
 ## Supporting files
 

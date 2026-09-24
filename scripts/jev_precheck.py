@@ -18,10 +18,13 @@ writes to Raindrop and never touches bookmark metadata.
 
 Cost model: up to 3 Jev calls per bookmark (~600-1200 tokens each). A full 1000+
 bookmark library is a five-figure-token run — use --limit for a taste first.
+Each HTTP call is capped at 30 s and the SDK retries 429/5xx automatically
+(3 attempts), so a stuck request can never hang the run indefinitely.
 
-Requires Python >= 3.10 and `pip install typesafe-sdk`; `TYPESAFE_API_KEY` in the
-environment. This script is OPTIONAL: without it (or without the key) the skill
-falls back to its built-in tag/domain/title heuristic.
+Requires Python >= 3.10 and `pip install "typesafe-sdk>=0.7.0,<0.8"` (verified
+against 0.7.0 — the pin matters because timeout/retry behavior is versioned);
+`TYPESAFE_API_KEY` in the environment. This script is OPTIONAL: without it (or
+without the key) the skill falls back to its built-in tag/domain/title heuristic.
 
 Output: JSON with per-bookmark predictions, confidence bands and a summary, written
 next to the input dumps (default) or to --out.
@@ -31,8 +34,9 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 try:
     from typesafe_sdk import Choice, Noul, TypeSafeClient
@@ -50,6 +54,8 @@ MEDIUM_DEFAULT = 0.50
 UNSORTED_ID = -1
 TRASH_ID = -99
 MAX_DEPTH = 3  # top-level = 1; descend at most to depth 3
+REQUEST_TIMEOUT = 30.0  # seconds per HTTP operation (SDK default 10 s is tight for large criteria sets)
+FUTURE_TIMEOUT = 300  # seconds per bookmark across all its calls incl. SDK retries
 
 
 def load_dump(path, key):
@@ -94,6 +100,20 @@ def python_ok():
     return ok, "%d.%d.%d" % sys.version_info[:3]
 
 
+_tls = threading.local()
+
+
+def get_client():
+    """One TypeSafeClient per thread: the SDK does not document thread safety,
+    so worker threads never share a client instance. Every call carries an
+    explicit timeout; 429/5xx retries are built into the SDK (3 attempts)."""
+    client = getattr(_tls, "client", None)
+    if client is None:
+        client = TypeSafeClient(timeout=REQUEST_TIMEOUT)
+        _tls.client = client
+    return client
+
+
 def probe(do_auth_call=False):
     """Environment verdict. Local-only by default; do_auth_call adds one tiny
     request to verify the key. Never raises — every failure becomes a status."""
@@ -117,7 +137,7 @@ def probe(do_auth_call=False):
         verdict["ready"] = True  # local checks passed; auth untested
         return verdict
     try:
-        client = TypeSafeClient()
+        client = get_client()
         r = client.system_one(
             state="ping",
             questions={"p": Noul(instructions="Is this a ping?")},
@@ -243,14 +263,19 @@ def main():
     if verdict["opt_out"]:
         print(json.dumps({"jev": "disabled", "reason": "%s is set" % OPT_OUT_ENV}))
         return
+    # Failure verdicts go to stdout (consistent with --probe output) plus a
+    # nonzero exit code, so callers parsing stdout always see the reason.
     if not verdict["api_key"]:
-        sys.exit(json.dumps({"jev": "not_configured", "reason": "TYPESAFE_API_KEY is not set"}))
+        print(json.dumps({"jev": "not_configured", "reason": "TYPESAFE_API_KEY is not set"}), flush=True)
+        sys.exit(1)
     if not verdict["sdk_available"]:
-        sys.exit(json.dumps({"jev": "unavailable",
-                             "reason": "typesafe-sdk import failed: %s" % verdict["sdk_error"]}))
+        print(json.dumps({"jev": "unavailable",
+                          "reason": "typesafe-sdk import failed: %s" % verdict["sdk_error"]}), flush=True)
+        sys.exit(1)
     if not verdict["python_ok"]:
-        sys.exit(json.dumps({"jev": "unavailable",
-                             "reason": "python >= 3.10 required, found %s" % verdict["python_version"]}))
+        print(json.dumps({"jev": "unavailable",
+                          "reason": "python >= 3.10 required, found %s" % verdict["python_version"]}), flush=True)
+        sys.exit(1)
 
     collections = load_dump(args.collections, "collections")
     bookmarks = load_dump(args.bookmarks, "bookmarks")
@@ -270,11 +295,11 @@ def main():
             sys.exit("error: %s must contain a non-empty 'categories' object" % args.categories)
     mode = "flat" if categories else "tree"
 
-    client = TypeSafeClient()
     results, errors = [], []
     t0 = time.time()
 
     def work(bm):
+        client = get_client()
         current = bm.get("collection_id")
         if mode == "flat":
             pred = classify_flat(client, bm, categories)
@@ -323,7 +348,10 @@ def main():
         done = 0
         for bm, fut in futs:
             try:
-                results.append(fut.result())
+                results.append(fut.result(timeout=FUTURE_TIMEOUT))
+            except FutureTimeoutError:
+                errors.append({"bookmark_id": bm.get("bookmark_id"),
+                               "error": "per-bookmark timeout after %ss" % FUTURE_TIMEOUT})
             except Exception as exc:  # noqa: BLE001
                 errors.append({"bookmark_id": bm.get("bookmark_id"),
                                "error": str(exc)[:200]})

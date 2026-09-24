@@ -6,6 +6,27 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.2.1] - 2026-09-24
+
+### Fixed / 修复
+
+- `jev_precheck.py` failure verdicts now go to stdout (plus exit code 1) instead of stderr — callers parsing stdout always see the reason JSON.
+  `jev_precheck.py` 的失败结论改为输出到 stdout（并返回退出码 1），不再走 stderr——解析 stdout 的调用方一定能拿到原因 JSON。
+- Hardened network behavior: every Jev call now carries an explicit 30 s timeout (SDK default 10 s was tight for large criteria sets), and each bookmark gets a 300 s hard cap across all its calls, recorded as an error instead of stalling the run. The SDK's built-in 429/5xx retry (3 attempts) is relied on rather than duplicated.
+  加固网络行为：每次 Jev 调用显式设置 30 秒超时（SDK 默认 10 秒对大选项集偏紧），每个书签在全部调用上设 300 秒硬上限，超时记为错误条目而不再卡住整轮；429/5xx 重试直接复用 SDK 内置的 3 次重试，不另造一层。
+- Each worker thread now uses its own `TypeSafeClient` instance (thread-local) — the SDK does not document thread safety, so client instances are no longer shared across the thread pool.
+  每个工作线程改用各自的 `TypeSafeClient` 实例（线程本地存储）——SDK 未声明线程安全，客户端实例不再跨线程池共享。
+
+### Changed / 变更
+
+- Install docs now pin `typesafe-sdk>=0.7.0,<0.8` (verified against 0.7.0) in the script docstring and SKILL.md, guarding against breaking or unvetted SDK updates; removed an unused `as_completed` import.
+  安装说明在脚本文档字符串与 SKILL.md 中锁定 `typesafe-sdk>=0.7.0,<0.8`（已对 0.7.0 验证），防范破坏性或未经验证的 SDK 更新；顺带移除未使用的 `as_completed` 导入。
+
+### Notes / 说明
+
+- Version bumped 1.2.0 → 1.2.1 (PATCH: robustness and safety fixes only; no feature or output-format changes beyond the stderr→stdout fix above).
+  版本 1.2.0 → 1.2.1（PATCH：仅健壮性与安全性修复；除上述 stderr→stdout 修正外无功能或输出格式变化）。
+
 ## [1.2.0] - 2026-09-21
 
 ### Changed / 变更
