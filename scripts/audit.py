@@ -30,6 +30,7 @@ Stdlib only, Python 3.9+.
 
 import argparse
 import json
+import os
 import re
 import sys
 
@@ -199,6 +200,18 @@ def singular_form(title):
     return n[:-1] if n.endswith("s") and len(n) > 1 else n
 
 
+def build_by_id(collections):
+    """collection_id -> record, shared by audit / render / framework."""
+    return {c.get("collection_id"): c for c in collections
+            if c.get("collection_id") is not None}
+
+
+def md_escape(s):
+    """Escape a dynamic value for a Markdown table cell: pipes break the
+    column layout, newlines become visible <br> line breaks."""
+    return (s or "").replace("\n", " <br> ").replace("|", "\\|")
+
+
 def parent_chain(col, by_id, lang):
     chain = []
     cur = col
@@ -213,18 +226,38 @@ def parent_chain(col, by_id, lang):
     return " > ".join(reversed(chain))
 
 
-def depth_of(col, by_id):
+def depth_of(col, by_id, _cache=None):
+    """Depth of col in the tree (top-level = 1). Pass a shared dict as _cache
+    to memoize every node along the walked chain (callers used to re-walk
+    each parent chain once per collection). Cyclic chains are computed but
+    never cached, keeping uncached semantics for broken input."""
+    cid = col.get("collection_id")
+    if _cache is not None and cid in _cache:
+        return _cache[cid]
     d, cur, seen = 1, col, set()
+    chain = [cid]
+    base = None
     while True:
         pid = cur.get("parent_id")
         if pid is None or pid in seen:
-            return d
+            break
         seen.add(pid)
         parent = by_id.get(pid)
         if parent is None:
-            return d
+            break
+        if _cache is not None and pid in _cache:
+            base = _cache[pid] + 1
+            break
         d += 1
+        chain.append(pid)
         cur = parent
+    if base is not None:
+        d = base + len(chain) - 1
+    # a repeated id on the chain means a parent cycle — do not cache it
+    if _cache is not None and len(chain) == len(set(chain)):
+        for i, c in enumerate(chain):
+            _cache[c] = d - i
+    return d
 
 
 def finding(rule, priority, problem, evidence, suggestion, operation):
@@ -240,11 +273,7 @@ def finding(rule, priority, problem, evidence, suggestion, operation):
 
 
 def audit(collections, unsorted_items):
-    by_id = {}
-    for c in collections:
-        cid = c.get("collection_id")
-        if cid is not None:
-            by_id[cid] = c
+    by_id = build_by_id(collections)
     governable = [c for c in collections
                   if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
     findings = []
@@ -389,8 +418,9 @@ def audit(collections, unsorted_items):
                 "re-parent"))
 
     # R10 — over-deep hierarchy
+    depth_cache = {}
     for c in governable:
-        if depth_of(c, by_id) > MAX_DEPTH_OK:
+        if depth_of(c, by_id, depth_cache) > MAX_DEPTH_OK:
             findings.append(finding(
                 "R10", "P2",
                 (L("r10_problem", "zh", d=MAX_DEPTH_OK), L("r10_problem", "en", d=MAX_DEPTH_OK)),
@@ -400,13 +430,13 @@ def audit(collections, unsorted_items):
                 STR["r10_suggestion"],
                 "re-parent"))
 
-    return governable, findings
+    return governable, findings, by_id
 
 
 ORDER = {"P0": 0, "P1": 1, "P2": 2}
 
 
-def render(collections, unsorted_items, stats, findings, lang):
+def render(collections, unsorted_items, stats, findings, lang, by_id=None, governable=None):
     idx = 0 if lang == "zh" else 1
     lines = []
     lines.append("# %s" % STR["report_title"][idx])
@@ -414,12 +444,14 @@ def render(collections, unsorted_items, stats, findings, lang):
     lines.append("## %s" % STR["overview"][idx])
     lines.append("")
     total_bookmarks = sum(c.get("bookmarks_count") or 0 for c in collections)
-    top_level = [c for c in collections if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)
-                 and c.get("parent_id") is None]
-    by_id = {c.get("collection_id"): c for c in collections if c.get("collection_id") is not None}
-    governable = [c for c in collections
-                  if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
-    max_depth = max((depth_of(c, by_id) for c in governable), default=0)
+    if by_id is None:
+        by_id = build_by_id(collections)
+    if governable is None:
+        governable = [c for c in collections
+                      if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
+    top_level = [c for c in governable if c.get("parent_id") is None]
+    depth_cache = {}
+    max_depth = max((depth_of(c, by_id, depth_cache) for c in governable), default=0)
     lines.append("| %s | %s |" % (STR["metric"][idx], STR["value"][idx]))
     lines.append("|---|---|")
     lines.append("| %s | %d |" % (STR["collections_total"][idx], len(governable)))
@@ -448,10 +480,11 @@ def render(collections, unsorted_items, stats, findings, lang):
             STR["col_suggestion"][idx], STR["col_operation"][idx]))
         lines.append("|---|---|---|---|---|")
         for f in rows:
-            evidence = f["evidence"][idx].replace("\n", " <br> ").replace("|", "\\|")
+            evidence = md_escape(f["evidence"][idx])
+            problem = md_escape(f["problem"][idx])
             op_label = STR[OPERATION_LABELS[f["operation"]]][idx]
             lines.append("| %s | %s | %s | %s | %s |" % (
-                f["rule"], f["problem"][idx], evidence, f["suggestion"][idx], op_label))
+                f["rule"], problem, evidence, f["suggestion"][idx], op_label))
         lines.append("")
 
     ops = {}
@@ -471,40 +504,71 @@ def render(collections, unsorted_items, stats, findings, lang):
 
 def framework(collections):
     """Deterministic framework metrics per FR1-FR3 (semantic FR4-FR5 are agent-layer)."""
-    by_id = {c.get("collection_id"): c for c in collections if c.get("collection_id") is not None}
+    by_id = build_by_id(collections)
     governable = [c for c in collections
                   if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
+    child_map = {}
+    for c in governable:
+        pid = c.get("parent_id")
+        if pid is not None:
+            child_map.setdefault(pid, []).append(c)
     tops = [c for c in governable if c.get("parent_id") is None]
+    # Per-top subtree max depth: measure every node's depth and attribute it to
+    # its top-level root. (The old loop only measured direct children's own
+    # depth, undercounting any tree deeper than two levels.)
+    depth_cache = {}
+    root_of = {}
+
+    def top_root(c):
+        path, seen, cur = [], set(), c
+        while True:
+            cid = cur.get("collection_id")
+            if cid in root_of:
+                root = root_of[cid]
+                break
+            pid = cur.get("parent_id")
+            if cid in seen or pid is None or pid not in by_id:
+                root = cid
+                break
+            seen.add(cid)
+            path.append(cid)
+            cur = by_id[pid]
+        for p in path:
+            root_of[p] = root
+        return root
+
+    tree_depth = {}
+    for c in governable:
+        r = top_root(c)
+        tree_depth[r] = max(tree_depth.get(r, 0), depth_of(c, by_id, depth_cache))
     rows = []
     for tcol in tops:
-        children = [c for c in governable if c.get("parent_id") == tcol["collection_id"]]
+        children = child_map.get(tcol["collection_id"], [])
         total = tcol.get("total_bookmarks_count") or tcol.get("bookmarks_count") or 0
-        max_depth = 1
-        for ch in children:
-            max_depth = max(max_depth, depth_of(ch, by_id))
         rows.append({
             "title": tcol.get("title") or "",
             "collection_id": tcol["collection_id"],
             "direct": tcol.get("bookmarks_count") or 0,
             "total": total,
             "children": len(children),
-            "max_depth": max_depth,
+            "max_depth": max(1, tree_depth.get(tcol["collection_id"], 1)),
         })
     rows.sort(key=lambda r: r["total"], reverse=True)
     lib_total = sum(r["total"] for r in rows) or 1
     warnings = []
     for r in rows:
+        title = md_escape(r["title"])
         if r["children"] == 0 and r["total"] >= FLAT_HEAVY_THRESHOLD:
-            warnings.append(("FR1", L("fw_flat_heavy", "zh", title=r["title"], n=r["total"]),
-                             L("fw_flat_heavy", "en", title=r["title"], n=r["total"])))
+            warnings.append(("FR1", L("fw_flat_heavy", "zh", title=title, n=r["total"]),
+                             L("fw_flat_heavy", "en", title=title, n=r["total"])))
         if r["total"] / lib_total > DOMINANCE_RATIO:
-            warnings.append(("FR2", L("fw_dominance", "zh", title=r["title"],
+            warnings.append(("FR2", L("fw_dominance", "zh", title=title,
                                       pct=round(r["total"] / lib_total * 100)),
-                             L("fw_dominance", "en", title=r["title"],
+                             L("fw_dominance", "en", title=title,
                                pct=round(r["total"] / lib_total * 100))))
         if r["total"] <= TINY_TOP_THRESHOLD:
-            warnings.append(("FR3", L("fw_tiny_top", "zh", title=r["title"], n=r["total"]),
-                             L("fw_tiny_top", "en", title=r["title"], n=r["total"])))
+            warnings.append(("FR3", L("fw_tiny_top", "zh", title=title, n=r["total"]),
+                             L("fw_tiny_top", "en", title=title, n=r["total"])))
     return rows, lib_total, warnings
 
 
@@ -522,7 +586,7 @@ def render_framework(collections, lang):
     lines.append("|---|---|---|---|---|---|")
     for r in rows:
         lines.append("| %s | %d | %d | %d | %d | %d%% |" % (
-            r["title"], r["direct"], r["total"], r["children"],
+            md_escape(r["title"]), r["direct"], r["total"], r["children"],
             r["max_depth"], round(r["total"] / lib_total * 100)))
     lines.append("")
     lines.append("## %s" % STR["fw_warnings"][idx])
@@ -567,13 +631,15 @@ def main():
         report = render_framework(collections, lang)
         n_out = 0
     else:
-        governable, findings = audit(collections, unsorted_items)
-        report = render(collections, unsorted_items, stats, findings, lang)
+        governable, findings, by_id = audit(collections, unsorted_items)
+        report = render(collections, unsorted_items, stats, findings, lang,
+                        by_id=by_id, governable=governable)
         n_out = len(findings)
 
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(report)
+        os.chmod(args.out, 0o600)  # report contains bookmark titles — owner-only
         print("report [%s/%s] written to %s (%s, %d collections scanned)"
               % (lang, args.mode, args.out,
                  "%d findings" % n_out if args.mode == "audit" else "framework metrics",

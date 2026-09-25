@@ -36,7 +36,7 @@ class AuditRuleTests(unittest.TestCase):
         cols = [col(1, "Tools", parent=10, direct=5),
                 col(2, "tools", parent=10, direct=5),
                 col(10, "Design", direct=1)]
-        _, findings = audit.audit(cols, [])
+        _, findings, _ = audit.audit(cols, [])
         r1 = find(findings, "R1")
         self.assertEqual(len(r1), 1)
         self.assertEqual(r1[0]["priority"], "P0")
@@ -46,17 +46,17 @@ class AuditRuleTests(unittest.TestCase):
                 col(2, "Study", parent=20, direct=5),
                 col(10, "Design", direct=1),
                 col(20, "Code", direct=1)]
-        _, findings = audit.audit(cols, [])
+        _, findings, _ = audit.audit(cols, [])
         self.assertEqual(find(findings, "R1")[0]["priority"], "P1")
 
     def test_r2_fragmented_flagged(self):
         cols = [col(1, "Tiny", direct=3)]
-        _, findings = audit.audit(cols, [])
+        _, findings, _ = audit.audit(cols, [])
         self.assertEqual(len(find(findings, "R2")), 1)
 
     def test_r3_empty_flagged(self):
         cols = [col(1, "Empty")]
-        _, findings = audit.audit(cols, [])
+        _, findings, _ = audit.audit(cols, [])
         self.assertEqual(len(find(findings, "R3")), 1)
 
     def test_r6_singular_plural_pair(self):
@@ -64,21 +64,21 @@ class AuditRuleTests(unittest.TestCase):
                 col(2, "Tools", parent=20, direct=4),
                 col(10, "Code", direct=1),
                 col(20, "Design", direct=1)]
-        _, findings = audit.audit(cols, [])
+        _, findings, _ = audit.audit(cols, [])
         self.assertEqual(len(find(findings, "R6")), 1)
 
     def test_unsorted_backlog_p0_threshold(self):
         items = [{"title": "t%d" % i} for i in range(21)]
         cols = [col(1, "Solo", direct=1)]
-        _, findings = audit.audit(cols, items)
+        _, findings, _ = audit.audit(cols, items)
         self.assertEqual(find(findings, "R5")[0]["priority"], "P0")
-        _, findings = audit.audit(cols, items[:20])
+        _, findings, _ = audit.audit(cols, items[:20])
         self.assertEqual(find(findings, "R5")[0]["priority"], "P1")
 
     def test_missing_title_does_not_crash(self):
         cols = [{"collection_id": 1, "parent_id": None,
                  "bookmarks_count": 0, "total_bookmarks_count": 0}]  # no "title" key
-        _, findings = audit.audit(cols, [])
+        _, findings, _ = audit.audit(cols, [])
         self.assertEqual(len(find(findings, "R3")), 1)
         zh = audit.render(cols, [], None, findings, "zh")
         self.assertIn("R3", zh)
@@ -96,7 +96,7 @@ class LanguageTests(unittest.TestCase):
 
     def test_render_is_monolingual(self):
         cols = [col(1, "A", direct=50), col(2, "B", parent=1, direct=3)]
-        _, findings = audit.audit(cols, [{"title": "x"}])
+        _, findings, _ = audit.audit(cols, [{"title": "x"}])
         zh = audit.render(cols, [{"title": "x"}], None, findings, "zh")
         en = audit.render(cols, [{"title": "x"}], None, findings, "en")
         self.assertNotIn("Overview", zh)
@@ -130,6 +130,37 @@ class FrameworkTests(unittest.TestCase):
                 col(31, "kid", parent=3, direct=5)]
         rows, lib_total, warnings = audit.framework(cols)
         self.assertEqual(warnings, [])
+
+
+class RobustnessTests(unittest.TestCase):
+    def test_pipe_in_title_is_escaped(self):
+        cols = [col(1, "A|B", direct=3)]
+        _, findings, _ = audit.audit(cols, [])
+        md = audit.render(cols, [], None, findings, "en")
+        self.assertNotIn("A|B", md)
+        self.assertIn("A\\|B", md)
+
+    def test_depth_cache_matches_uncached(self):
+        cols = [col(1, "Root", direct=1),
+                col(2, "Mid", parent=1, direct=1),
+                col(3, "Leaf", parent=2, direct=1),
+                col(4, "Leaf2", parent=2, direct=1)]
+        by_id = audit.build_by_id(cols)
+        cache = {}
+        for c in cols:
+            for _ in range(2):  # second pass hits the cache
+                self.assertEqual(audit.depth_of(c, by_id),
+                                 audit.depth_of(c, by_id, cache))
+
+    def test_framework_uses_same_depth_as_render(self):
+        cols = [col(1, "Top", direct=5, total=25),
+                col(11, "Mid", parent=1, direct=5, total=20),
+                col(111, "Leaf", parent=11, direct=20)]
+        _, findings, by_id = audit.audit(cols, [])
+        gov = [c for c in cols if c.get("collection_id") not in (-1, -99)]
+        max_render = max(audit.depth_of(c, by_id) for c in gov)
+        rows, _, _ = audit.framework(cols)
+        self.assertEqual(rows[0]["max_depth"], max_render)
 
 
 if __name__ == "__main__":

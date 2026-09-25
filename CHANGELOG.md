@@ -6,6 +6,31 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.2.3] - 2026-09-25
+
+### Fixed / 修复
+
+- Framework review's "Max depth" column now measures the deepest node of each top-level tree; it previously only measured direct children's own depth, undercounting any tree deeper than two levels.
+  框架评审的「最大深度」列现按顶层树内最深的节点计算；此前只量到直接子夹自身的深度，超过两层的树会被少报。
+- Flat-mode categories that map to no collection now produce an `unknown` band instead of flagging every bookmark in that category as a relocation candidate.
+  flat 模式下映射为空列表的类别现产出 `unknown` 分档，不再把该类别下所有书签都标成归位候选。
+- Output files (`audit.py --out`, `jev_precheck.py` results) are now written with owner-only permissions (0600) — they contain bookmark titles/domains and used to land in `/tmp` world-readable.
+  输出文件（`audit.py --out`、`jev_precheck.py` 结果）现以仅属主可读权限（0600）写入——其中含书签标题/域名，此前在 `/tmp` 中默认全员可读。
+
+### Changed / 变更
+
+- Dynamic titles/problems/evidence are escaped for Markdown table cells — a `|` in a collection title no longer breaks the report layout (audit tables and framework tables/warnings).
+  动态标题/问题/证据均做 Markdown 表格单元格转义——收藏夹标题含 `|` 不再破坏报告排版（审计表格与框架评审表格/预警均已覆盖）。
+- Remaining duplicate work removed: `framework()` uses a precomputed child map and shares the depth cache; `render()` reuses the id map and governable list from `audit()`; Jev classification options are prebuilt once instead of per bookmark; depth lookups are memoized along the walked chain (cyclic chains are never cached).
+  消除剩余重复计算：`framework()` 改用预构建子夹映射并共享深度缓存；`render()` 复用 `audit()` 产出的 id 映射与可治理列表；Jev 分类选项改为一次性预构建而非每书签重建；深度查询沿父链记忆化（成环链路不入缓存）。
+- `classify()` no longer relies on a module-level global — `by_id` is passed explicitly; title reads in `jev_precheck.py` node descriptions are null-safe.
+  `classify()` 不再依赖模块级全局变量——`by_id` 改为显式传参；`jev_precheck.py` 节点描述中的标题读取改为空值安全。
+
+### Notes / 说明
+
+- Version bumped 1.2.2 → 1.2.3 (PATCH: internal cleanups plus robustness fixes; the only output changes are the corrected max-depth metric, the escaped pipes, and the new `unknown` band). Suite is now 24 tests.
+  版本 1.2.2 → 1.2.3（PATCH：内部清理与健壮性修复；输出变化仅限修正后的最大深度指标、管道符转义与新增的 `unknown` 分档）。测试套件现为 24 项。
+
 ## [1.2.2] - 2026-09-25
 
 ### Fixed / 修复

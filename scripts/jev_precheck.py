@@ -88,10 +88,10 @@ def build_tree(collections):
 
 
 def node_desc(node, children):
-    d = node["title"]
+    d = node.get("title") or ""
     kids = children.get(node.get("collection_id"), [])
     if kids:
-        d += " — subcategories: " + ", ".join(k["title"] for k in kids)
+        d += " — subcategories: " + ", ".join(k.get("title") or "" for k in kids)
     return d
 
 
@@ -151,17 +151,17 @@ def probe(do_auth_call=False):
     return verdict
 
 
-def classify_flat(client, bm, categories):
+def classify_flat(client, bm, categories, criteria):
     """Validated strategy: blind Choice over well-described categories (NOT the raw
-    tree), then code maps the category to its collection(s). A bookmark is a
-    relocation candidate only when its current collection is NOT among the
-    predicted category's mapped collections."""
+    tree), then code maps the category to its collection(s). `criteria` is the
+    prebuilt {name: description} dict shared by all calls (it used to be rebuilt
+    for every bookmark). A bookmark is a relocation candidate only when its
+    current collection is NOT among the predicted category's mapped collections."""
     state = {"bookmark": {
         "title": bm.get("title") or "",
         "tags": bm.get("tags") or [],
         "domain": bm.get("domain") or "",
     }}
-    criteria = {name: spec["description"] for name, spec in categories.items()}
     r = client.system_one(
         state=state,
         questions={"category": Choice(
@@ -175,8 +175,11 @@ def classify_flat(client, bm, categories):
     return {"category": a.choice, "mapped": mapped, "confidence": a.confidence, "calls": 1}
 
 
-def classify(client, bm, tops, children):
-    """Two-stage (up to depth-3) blind classification. Returns prediction dict."""
+def classify(client, bm, by_id, children, s1_options, sub_specs):
+    """Two-stage (up to depth-3) blind classification. The stage-1 options and
+    per-node (options, instructions) specs are prebuilt once by the caller (they
+    used to be rebuilt for every bookmark); `by_id` is passed explicitly instead
+    of a hidden module global. Returns prediction dict."""
     state = {"bookmark": {
         "title": bm.get("title") or "",
         "tags": bm.get("tags") or [],
@@ -184,7 +187,6 @@ def classify(client, bm, tops, children):
     }}
     calls = 0
 
-    s1_options = {str(t["collection_id"]): node_desc(t, children) for t in tops}
     r1 = client.system_one(
         state=state,
         questions={"tree": Choice(
@@ -199,18 +201,13 @@ def classify(client, bm, tops, children):
     node_id, node_conf = tree_id, tree_conf
 
     for _ in range(MAX_DEPTH - 1):
-        kids = children.get(node_id, [])
-        if not kids:
+        if not children.get(node_id):
             break
-        node = by_id_local[node_id]
-        options = {"stay": "%s (keep it at this level)" % node["title"]}
-        for k in kids:
-            options[str(k["collection_id"])] = node_desc(k, children)
+        options, instructions = sub_specs[node_id]
         r2 = client.system_one(
             state=state,
             questions={"sub": Choice(
-                instructions=("Inside '%s', which subcategory fits this bookmark best, "
-                              "or should it stay at this level?" % node["title"]),
+                instructions=instructions,
                 criteria=options,
             )},
         )
@@ -287,9 +284,7 @@ def main():
     if args.limit:
         bookmarks = bookmarks[: args.limit]
 
-    global by_id_local
     by_id, govable, tops, children = build_tree(collections)
-    by_id_local = by_id
     known = {c.get("collection_id") for c in govable}
     categories = None
     if args.categories:
@@ -300,6 +295,22 @@ def main():
             sys.exit("error: %s must contain a non-empty 'categories' object" % args.categories)
     mode = "flat" if categories else "tree"
 
+    # Prebuild all classification options once (PERF: per-bookmark rebuilds were
+    # pure duplicate work; sub_specs also drops the old module-global by_id).
+    criteria = ({name: spec.get("description") or "" for name, spec in categories.items()}
+                if categories else None)
+    s1_options = {str(t["collection_id"]): node_desc(t, children) for t in tops}
+    sub_specs = {}
+    for cid, node in by_id.items():
+        kids = children.get(cid)
+        if kids:
+            opts = {"stay": "%s (keep it at this level)" % (node.get("title") or "")}
+            for k in kids:
+                opts[str(k["collection_id"])] = node_desc(k, children)
+            instr = ("Inside '%s', which subcategory fits this bookmark best, "
+                     "or should it stay at this level?" % (node.get("title") or ""))
+            sub_specs[cid] = (opts, instr)
+
     results, errors = [], []
     t0 = time.time()
 
@@ -307,9 +318,15 @@ def main():
         client = get_client()
         current = bm.get("collection_id")
         if mode == "flat":
-            pred = classify_flat(client, bm, categories)
+            pred = classify_flat(client, bm, categories, criteria)
             mapped = pred["mapped"]
-            candidate = current not in mapped
+            if not mapped:
+                # category maps to no collection — cannot judge, never a candidate
+                band = "unknown"
+            else:
+                band = ("consistent" if current in mapped else
+                        "high" if pred["confidence"] >= args.high else
+                        "medium" if pred["confidence"] >= args.medium else "low")
             predicted_title = ", ".join(
                 (by_id.get(cid, {}) or {}).get("title", str(cid)) for cid in mapped)
             return {
@@ -320,12 +337,10 @@ def main():
                 "predicted": mapped,
                 "predicted_title": predicted_title,
                 "confidence": round(pred["confidence"], 3),
-                "band": ("consistent" if not candidate else
-                         "high" if pred["confidence"] >= args.high else
-                         "medium" if pred["confidence"] >= args.medium else "low"),
+                "band": band,
                 "calls": pred["calls"],
             }
-        pred = classify(client, bm, tops, children)
+        pred = classify(client, bm, by_id, children, s1_options, sub_specs)
         conf = pred["confidence"]
         if pred["predicted"] == current:
             band = "consistent"
@@ -390,6 +405,7 @@ def main():
         os.path.dirname(os.path.abspath(args.bookmarks)), "jev-precheck-results.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.chmod(out_path, 0o600)  # results contain bookmark titles — owner-only
     print("DONE bands=%s calls=%d -> %s" % (bands, calls_total, out_path))
 
 
