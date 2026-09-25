@@ -75,6 +75,14 @@ class AuditRuleTests(unittest.TestCase):
         _, findings = audit.audit(cols, items[:20])
         self.assertEqual(find(findings, "R5")[0]["priority"], "P1")
 
+    def test_missing_title_does_not_crash(self):
+        cols = [{"collection_id": 1, "parent_id": None,
+                 "bookmarks_count": 0, "total_bookmarks_count": 0}]  # no "title" key
+        _, findings = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R3")), 1)
+        zh = audit.render(cols, [], None, findings, "zh")
+        self.assertIn("R3", zh)
+
 
 class LanguageTests(unittest.TestCase):
     def test_detect_chinese(self):

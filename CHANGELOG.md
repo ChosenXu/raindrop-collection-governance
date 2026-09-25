@@ -6,6 +6,27 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.2.2] - 2026-09-25
+
+### Fixed / 修复
+
+- `jev_precheck.py` now validates `--workers` (1–32) and the confidence thresholds (`0 < medium < high <= 1`) up front with a clear argparse error, instead of crashing later inside `ThreadPoolExecutor` or silently producing meaningless bands.
+  `jev_precheck.py` 启动时即校验 `--workers`（1–32）与置信阈值（`0 < medium < high <= 1`），给出明确的 argparse 报错；不再等到 `ThreadPoolExecutor` 内部崩溃，也不会静默产出无意义的分档。
+- `audit.py` no longer crashes with a bare `KeyError` when a collection record is missing its `title` field — all title reads are now null-safe (empty title renders as blank); R7's old `or ""` guard covered `null` but not a missing key.
+  `audit.py` 在收藏夹记录缺少 `title` 字段时不再裸抛 `KeyError`——所有标题读取改为空值安全（缺失标题渲染为空）；R7 原有的 `or ""` 防护只覆盖 `null` 值、不覆盖缺字段。
+
+### Changed / 变更
+
+- R3's has-children check now uses a precomputed parent-id set and R6's singular/plural scan stores members directly in the grouping dict, removing two O(n²) full-list scans in `audit()`.
+  R3 的子夹判断改为使用预计算的父级 id 集合，R6 的单复数扫描改为在分组字典中直存成员，消除 `audit()` 中两处 O(n²) 全量扫描。
+- Two regression tests added: missing-`title` robustness (audit) and CLI argument validation (jev_precheck); suite is now 21 tests.
+  新增两项回归测试：缺 `title` 容错（audit）与命令行参数校验（jev_precheck）；测试套件现为 21 项。
+
+### Notes / 说明
+
+- Version bumped 1.2.1 → 1.2.2 (PATCH: robustness fixes and internal performance cleanups only; audit findings and report output are unchanged for well-formed input).
+  版本 1.2.1 → 1.2.2（PATCH：仅健壮性修复与内部性能清理；对格式完好的输入，审计发现与报告输出完全不变）。
+
 ## [1.2.1] - 2026-09-24
 
 ### Fixed / 修复

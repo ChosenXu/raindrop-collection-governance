@@ -258,6 +258,11 @@ def main():
         return
     if not args.collections or not args.bookmarks:
         ap.error("--collections and --bookmarks are required (unless running --probe)")
+    if not 1 <= args.workers <= 32:
+        ap.error("--workers must be between 1 and 32 (got %d)" % args.workers)
+    if not 0.0 < args.medium < args.high <= 1.0:
+        ap.error("thresholds must satisfy 0 < medium < high <= 1 "
+                 "(got medium=%s, high=%s)" % (args.medium, args.high))
 
     verdict = probe()
     if verdict["opt_out"]:

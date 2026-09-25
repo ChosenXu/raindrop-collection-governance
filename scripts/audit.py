@@ -205,7 +205,7 @@ def parent_chain(col, by_id, lang):
     seen = set()
     while cur is not None and cur["collection_id"] not in seen:
         seen.add(cur["collection_id"])
-        chain.append(cur["title"])
+        chain.append(cur.get("title") or "")
         pid = cur.get("parent_id")
         cur = by_id.get(pid) if pid is not None else None
     if not chain:
@@ -252,48 +252,49 @@ def audit(collections, unsorted_items):
     # R1 / R8 — duplicate titles (case-insensitive); R8 casing is a sub-case
     groups = {}
     for c in governable:
-        groups.setdefault(norm_title(c["title"]), []).append(c)
+        groups.setdefault(norm_title(c.get("title")), []).append(c)
     for n, members in sorted(groups.items()):
         if len(members) < 2:
             continue
         parents = {m.get("parent_id") for m in members}
-        chain_txt = "; ".join("%s (%s, %s %s)" % (m["title"], m["collection_id"],
+        chain_txt = "; ".join("%s (%s, %s %s)" % ((m.get("title") or ""), m["collection_id"],
                                                   L("in_txt", "zh"), parent_chain(m, by_id, "zh"))
                               for m in members)
-        chain_txt_en = "; ".join("%s (%s, in %s)" % (m["title"], m["collection_id"],
+        chain_txt_en = "; ".join("%s (%s, in %s)" % ((m.get("title") or ""), m["collection_id"],
                                                     parent_chain(m, by_id, "en"))
                                  for m in members)
         evidence = (chain_txt, chain_txt_en)
         if len(parents) == 1 and None not in parents:
             findings.append(finding(
                 "R1", "P0",
-                (L("r1_same_parent", "zh", title=members[0]["title"], n=len(members)),
-                 L("r1_same_parent", "en", title=members[0]["title"], n=len(members))),
+                (L("r1_same_parent", "zh", title=members[0].get("title") or "", n=len(members)),
+                 L("r1_same_parent", "en", title=members[0].get("title") or "", n=len(members))),
                 evidence,
                 STR["r1_suggestion"],
                 "merge-or-rename"))
         else:
             findings.append(finding(
                 "R1", "P1",
-                (L("r1_cross_parent", "zh", title=members[0]["title"], n=len(members)),
-                 L("r1_cross_parent", "en", title=members[0]["title"], n=len(members))),
+                (L("r1_cross_parent", "zh", title=members[0].get("title") or "", n=len(members)),
+                 L("r1_cross_parent", "en", title=members[0].get("title") or "", n=len(members))),
                 evidence,
                 STR["r1_suggestion"],
                 "merge-or-rename"))
         # R8 — exact-case duplicates inside the group
-        titles = {m["title"] for m in members}
+        titles = {m.get("title") or "" for m in members}
         if len(titles) > 1:
             findings.append(finding(
                 "R8", "P1",
                 (L("r8_problem", "zh", group=n), L("r8_problem", "en", group=n)),
-                ("; ".join("%s (%s)" % (m["title"], m["collection_id"]) for m in members),) * 2,
+                ("; ".join("%s (%s)" % ((m.get("title") or ""), m["collection_id"]) for m in members),) * 2,
                 STR["r8_suggestion"],
                 "rename"))
 
     # R2 / R3 — fragmented and empty collections
+    parent_ids = {c.get("parent_id") for c in governable if c.get("parent_id") is not None}
     for c in sorted(governable, key=lambda x: x.get("bookmarks_count") or 0):
         count = c.get("bookmarks_count") or 0
-        ev = lambda lang: "%s (%s, %s %s)" % (c["title"], c["collection_id"],
+        ev = lambda lang: "%s (%s, %s %s)" % ((c.get("title") or ""), c["collection_id"],
                                               L("in_txt", lang), parent_chain(c, by_id, lang))
         if 0 < count <= FRAGMENT_THRESHOLD:
             findings.append(finding(
@@ -303,8 +304,7 @@ def audit(collections, unsorted_items):
                 STR["r2_suggestion"],
                 "merge"))
         elif count == 0:
-            has_children = any(x.get("parent_id") == c["collection_id"] for x in governable)
-            if not has_children:
+            if c["collection_id"] not in parent_ids:
                 # R3 — empty (no children either)
                 findings.append(finding(
                     "R3", "P1",
@@ -323,7 +323,7 @@ def audit(collections, unsorted_items):
                 "R4", "P2",
                 (L("r4_problem", "zh", d=direct, t=total),
                  L("r4_problem", "en", d=direct, t=total)),
-                ("%s (%s)" % (c["title"], c["collection_id"]),) * 2,
+                ("%s (%s)" % ((c.get("title") or ""), c["collection_id"]),) * 2,
                 STR["r4_suggestion"],
                 "none"))
 
@@ -352,28 +352,28 @@ def audit(collections, unsorted_items):
     # R6 — singular/plural pairs
     sing = {}
     for c in governable:
-        sing.setdefault(singular_form(c["title"]), set()).add(c["title"])
-    for base, variants in sorted(sing.items()):
+        sing.setdefault(singular_form(c.get("title")), []).append(c)
+    for base, members in sorted(sing.items()):
+        variants = {m.get("title") or "" for m in members}
         if len(variants) > 1:
-            members = [c for c in governable if c["title"] in variants]
             variants_txt = " vs ".join(sorted(variants))
             findings.append(finding(
                 "R6", "P1",
                 (L("r6_problem", "zh", variants=variants_txt),
                  L("r6_problem", "en", variants=variants_txt)),
-                ("; ".join("%s (%s)" % (m["title"], m["collection_id"]) for m in members),) * 2,
+                ("; ".join("%s (%s)" % ((m.get("title") or ""), m["collection_id"]) for m in members),) * 2,
                 STR["r6_suggestion"],
                 "merge-or-rename"))
 
     # R7 — language mix
-    ascii_titles = [c for c in governable if not CJK_RE.search(c["title"] or "")]
-    cjk_titles = [c for c in governable if CJK_RE.search(c["title"] or "")]
+    ascii_titles = [c for c in governable if not CJK_RE.search(c.get("title") or "")]
+    cjk_titles = [c for c in governable if CJK_RE.search(c.get("title") or "")]
     if governable and len(ascii_titles) / len(governable) >= 0.8 and cjk_titles:
         for c in cjk_titles:
             findings.append(finding(
                 "R7", "P2",
                 (L("r7_problem", "zh"), L("r7_problem", "en")),
-                ("%s (%s)" % (c["title"], c["collection_id"]),) * 2,
+                ("%s (%s)" % ((c.get("title") or ""), c["collection_id"]),) * 2,
                 STR["r7_suggestion"],
                 "rename"))
 
@@ -384,7 +384,7 @@ def audit(collections, unsorted_items):
             findings.append(finding(
                 "R9", "P1",
                 (L("r9_problem", "zh", pid=pid), L("r9_problem", "en", pid=pid)),
-                ("%s (%s)" % (c["title"], c["collection_id"]),) * 2,
+                ("%s (%s)" % ((c.get("title") or ""), c["collection_id"]),) * 2,
                 STR["r9_suggestion"],
                 "re-parent"))
 
@@ -394,9 +394,9 @@ def audit(collections, unsorted_items):
             findings.append(finding(
                 "R10", "P2",
                 (L("r10_problem", "zh", d=MAX_DEPTH_OK), L("r10_problem", "en", d=MAX_DEPTH_OK)),
-                ("%s (%s, %s %s)" % (c["title"], c["collection_id"],
+                ("%s (%s, %s %s)" % ((c.get("title") or ""), c["collection_id"],
                                      L("in_txt", "zh"), parent_chain(c, by_id, "zh")),
-                 "%s (%s, in %s)" % (c["title"], c["collection_id"], parent_chain(c, by_id, "en"))),
+                 "%s (%s, in %s)" % ((c.get("title") or ""), c["collection_id"], parent_chain(c, by_id, "en"))),
                 STR["r10_suggestion"],
                 "re-parent"))
 
@@ -483,7 +483,7 @@ def framework(collections):
         for ch in children:
             max_depth = max(max_depth, depth_of(ch, by_id))
         rows.append({
-            "title": tcol["title"],
+            "title": tcol.get("title") or "",
             "collection_id": tcol["collection_id"],
             "direct": tcol.get("bookmarks_count") or 0,
             "total": total,

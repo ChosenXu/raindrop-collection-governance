@@ -7,6 +7,7 @@ Run from the skill root:
 
 import importlib
 import os
+import subprocess
 import sys
 import unittest
 
@@ -59,6 +60,18 @@ class ProbeTests(unittest.TestCase):
             self.assertTrue(jp.probe()["opt_out"], value)
         os.environ[jp.OPT_OUT_ENV] = "on"
         self.assertFalse(jp.probe()["opt_out"])
+
+    def test_workers_and_threshold_validation(self):
+        script = os.path.join(os.path.dirname(__file__), "..", "scripts", "jev_precheck.py")
+        base = [sys.executable, script,
+                "--collections", "/nonexistent.json", "--bookmarks", "/nonexistent.json"]
+        r = subprocess.run(base + ["--workers", "0"], capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--workers", r.stderr)
+        r = subprocess.run(base + ["--high", "0.4", "--medium", "0.6"],
+                           capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("thresholds", r.stderr)
 
 
 if __name__ == "__main__":
