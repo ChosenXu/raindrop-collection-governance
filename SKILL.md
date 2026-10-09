@@ -2,7 +2,7 @@
 name: raindrop-collection-governance
 description: Use when the user wants to audit, restructure, or govern their Raindrop.io collection structure. Triggers on Raindrop, raindrop.io, 收藏夹, collections, folders with governance intent (盘点 / 体检 / 重组 / 合并 / 挪书签 / 框架评审 / audit / restructure / merge / framework review). Read-only P0/P1/P2 audit, confirmed restructuring with rollback and readback verification, misplaced-bookmark relocation, framework-review mode. Never edits bookmark titles, notes, or tags — raindrop-bookmark-organizer's domain.
 agent_created: true
-version: 1.2.3
+version: 1.2.4
 license: MIT
 ---
 
@@ -111,7 +111,7 @@ Load only when needed:
 - `scripts/jev_precheck.py` — optional Jev pre-screener for relocation candidates (experimental)
 - `docs/decisions.md` — architecture decisions and rationale
 
-## Out of scope (0.1.0)
+## Out of scope
 
 - REST fallback client (documented, not implemented)
 - Bookmark metadata editing (title / note / tags — organizer's domain)

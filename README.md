@@ -101,7 +101,8 @@ python3 -m unittest discover -s tests -v
 
 ```
 SKILL.md                            # skill definition & workflow
-README.md                           # this file
+README.md / README.zh-CN.md         # bilingual docs
+CHANGELOG.md                        # bilingual change history
 LICENSE                             # MIT
 docs/
   decisions.md                      # architecture decisions & rationale
@@ -109,8 +110,12 @@ references/
   audit-rules.md                    # detection rules R1-R10 + FR1-FR5, report formats
 scripts/
   audit.py                          # deterministic audit & framework report renderer
+  jev_precheck.py                   # optional Jev pre-screener (relocation candidates)
 tests/
-  test_audit.py                     # stdlib regression suite
+  test_audit.py                     # audit regression suite (stdlib, offline)
+  test_jev_probe.py                 # Jev probe & CLI validation tests
+  test_jev_bands.py                 # confidence-band decision tests
+.github/workflows/ci.yml            # CI: syntax compile + lint + tests
 ```
 
 ## License

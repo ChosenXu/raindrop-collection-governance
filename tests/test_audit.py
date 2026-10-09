@@ -8,6 +8,8 @@ Covers the deterministic rule set (R1/R2/R3/R5/R6), language detection,
 monolingual rendering, and the framework metrics (FR1/FR2/FR3).
 """
 
+import contextlib
+import io
 import os
 import sys
 import unittest
@@ -132,6 +134,59 @@ class FrameworkTests(unittest.TestCase):
         self.assertEqual(warnings, [])
 
 
+class RuleCoverageTests(unittest.TestCase):
+    """Direct regression coverage for the rules the original suite missed
+    (R4/R7/R8/R9/R10 are deterministic string/set logic — cheap to test)."""
+
+    def test_r4_hollow_top_container(self):
+        # direct == 0 avoids colliding with R2 (fragmented); children carry content
+        cols = [col(1, "Container", direct=0, total=30),
+                col(11, "kid", parent=1, direct=30)]
+        _, findings, _ = audit.audit(cols, [])
+        r4 = find(findings, "R4")
+        self.assertEqual(len(r4), 1)
+        self.assertEqual(r4[0]["priority"], "P2")
+
+    def test_r7_language_mix_in_ascii_library(self):
+        cols = [col(i, name, direct=10) for i, name in
+                enumerate(["Alpha", "Bravo", "Charlie", "Delta", "Echo",
+                           "Foxtrot", "Golf", "Hotel", "India"], start=1)]
+        cols.append(col(20, "中文夹", direct=10))
+        _, findings, _ = audit.audit(cols, [])
+        r7 = find(findings, "R7")
+        self.assertEqual(len(r7), 1)
+        self.assertEqual(r7[0]["priority"], "P2")
+
+    def test_r8_casing_conflict_subcase_of_r1(self):
+        cols = [col(1, "design", parent=10, direct=10),
+                col(2, "Design", parent=10, direct=10),
+                col(10, "Root", direct=10)]
+        _, findings, _ = audit.audit(cols, [])
+        r8 = find(findings, "R8")
+        self.assertEqual(len(r8), 1)
+        self.assertEqual(r8[0]["priority"], "P1")
+        # the same group is also an R1 same-parent duplicate (P0)
+        self.assertEqual(find(findings, "R1")[0]["priority"], "P0")
+
+    def test_r9_orphaned_parent(self):
+        cols = [col(1, "Orphan", parent=999, direct=10)]
+        _, findings, _ = audit.audit(cols, [])
+        r9 = find(findings, "R9")
+        self.assertEqual(len(r9), 1)
+        self.assertEqual(r9[0]["priority"], "P1")
+        self.assertIn("999", r9[0]["problem"][1])
+
+    def test_r10_over_deep_hierarchy(self):
+        cols = [col(1, "L1", direct=10),
+                col(2, "L2", parent=1, direct=10),
+                col(3, "L3", parent=2, direct=10),
+                col(4, "L4", parent=3, direct=10),
+                col(5, "L5", parent=4, direct=10)]
+        _, findings, _ = audit.audit(cols, [])
+        # nodes at depth 4 and 5 exceed MAX_DEPTH_OK = 3
+        self.assertEqual(len(find(findings, "R10")), 2)
+
+
 class RobustnessTests(unittest.TestCase):
     def test_pipe_in_title_is_escaped(self):
         cols = [col(1, "A|B", direct=3)]
@@ -161,6 +216,18 @@ class RobustnessTests(unittest.TestCase):
         max_render = max(audit.depth_of(c, by_id) for c in gov)
         rows, _, _ = audit.framework(cols)
         self.assertEqual(rows[0]["max_depth"], max_render)
+
+    def test_missing_collection_id_is_skipped_not_crash(self):
+        cols = [{"title": "NoId", "parent_id": None,
+                 "bookmarks_count": 0, "total_bookmarks_count": 0},  # no collection_id
+                col(1, "Solo", direct=10)]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            _, findings, _ = audit.audit(cols, [])
+            rows, _, _ = audit.framework(cols)
+        self.assertEqual(findings, [])   # the id-less record is skipped entirely
+        self.assertEqual(len(rows), 1)   # framework sees only the valid record
+        self.assertIn("collection_id", err.getvalue())
 
 
 if __name__ == "__main__":

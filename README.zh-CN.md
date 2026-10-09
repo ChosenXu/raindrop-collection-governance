@@ -101,7 +101,8 @@ python3 -m unittest discover -s tests -v
 
 ```
 SKILL.md                            # skill 定义与工作流
-README.md                           # 本文件（英文 / 简体中文）
+README.md / README.zh-CN.md         # 双语文档
+CHANGELOG.md                        # 双语更新日志
 LICENSE                             # MIT
 docs/
   decisions.md                      # 架构决策与理由
@@ -109,8 +110,12 @@ references/
   audit-rules.md                    # 检测规则 R1-R10 + FR1-FR5，报告格式
 scripts/
   audit.py                          # 确定性盘点与框架评审报告渲染器
+  jev_precheck.py                   # 可选 Jev 预筛器（归位候选）
 tests/
-  test_audit.py                     # 标准库回归测试
+  test_audit.py                     # 盘点回归测试（标准库，离线）
+  test_jev_probe.py                 # Jev 探针与命令行参数校验测试
+  test_jev_bands.py                 # 置信分档判定测试
+.github/workflows/ci.yml            # CI：语法编译 + lint + 测试
 ```
 
 ## 许可证

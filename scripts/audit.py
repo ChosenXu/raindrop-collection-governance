@@ -36,6 +36,9 @@ import sys
 
 UNSORTED_ID = -1
 TRASH_ID = -99
+# Thresholds: the constants in this block are the single source of truth.
+# references/audit-rules.md documents these values in prose — update it in the
+# same change whenever a threshold here changes (no automated drift check).
 FRAGMENT_THRESHOLD = 5          # R2: bookmarks_count <= 5
 UNSORTED_P0 = 20                # R5: > 20 -> P0
 CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
@@ -206,6 +209,22 @@ def build_by_id(collections):
             if c.get("collection_id") is not None}
 
 
+def with_collection_ids(collections):
+    """Drop records that carry no `collection_id` — they cannot participate in
+    tree logic (by_id, parent chains, evidence). Skipped records trigger one
+    stderr warning. Same robustness class as the missing-title fix in 1.2.2,
+    applied to every id read."""
+    valid, skipped = [], 0
+    for c in collections:
+        if c.get("collection_id") is None:
+            skipped += 1
+        else:
+            valid.append(c)
+    if skipped:
+        sys.stderr.write("warning: %d record(s) without collection_id skipped\n" % skipped)
+    return valid
+
+
 def md_escape(s):
     """Escape a dynamic value for a Markdown table cell: pipes break the
     column layout, newlines become visible <br> line breaks."""
@@ -273,6 +292,7 @@ def finding(rule, priority, problem, evidence, suggestion, operation):
 
 
 def audit(collections, unsorted_items):
+    collections = with_collection_ids(collections)
     by_id = build_by_id(collections)
     governable = [c for c in collections
                   if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
@@ -504,6 +524,7 @@ def render(collections, unsorted_items, stats, findings, lang, by_id=None, gover
 
 def framework(collections):
     """Deterministic framework metrics per FR1-FR3 (semantic FR4-FR5 are agent-layer)."""
+    collections = with_collection_ids(collections)
     by_id = build_by_id(collections)
     governable = [c for c in collections
                   if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]

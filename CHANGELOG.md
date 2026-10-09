@@ -6,6 +6,27 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.2.4] - 2026-10-09
+
+### Fixed / 修复
+
+- Records missing the `collection_id` field no longer crash the audit or the pre-screener with a bare `KeyError` — they are skipped with a one-line stderr warning (same robustness class as the missing-`title` fix in 1.2.2, now applied to every id read).
+  缺少 `collection_id` 字段的记录不再让盘点或预筛器裸抛 `KeyError`——改为跳过并向 stderr 输出一行告警（与 1.2.2 缺 `title` 修复同类，覆盖所有 id 读取处）。
+
+### Changed / 变更
+
+- Confidence-band decisions in `jev_precheck.py` are extracted into pure functions (`assign_band_flat` / `assign_band_tree`) and covered by a new offline test suite — this logic shipped the unknown-band bug fixed in 1.2.3 and previously had zero coverage because it was coupled to network calls.
+  `jev_precheck.py` 的置信分档判定抽为纯函数（`assign_band_flat` / `assign_band_tree`）并新增离线测试——该逻辑在 1.2.3 出过 unknown 分档 bug，此前因与网络调用耦合而零测试覆盖。
+- New regression tests for rules R4 / R7 / R8 / R9 / R10 and the missing-`collection_id` path; the suite grows from 24 to 40 tests.
+  新增规则 R4 / R7 / R8 / R9 / R10 与缺 `collection_id` 路径的回归测试；测试套件由 24 项增至 40 项。
+- README structure listings (EN / zh-CN) synced with reality — they predated `jev_precheck.py` and the newer tests — and the SKILL.md "Out of scope" heading no longer carries a stale 0.1.0 version tag; thresholds in `audit.py` are annotated as the single source of truth that `references/audit-rules.md` mirrors.
+  README 目录结构（英文 / 中文）同步至现状——原清单早于 `jev_precheck.py` 与新增测试——SKILL.md「Out of scope」标题不再残留过期的 0.1.0 版本号；`audit.py` 阈值注释声明为单一事实源、`references/audit-rules.md` 与之对齐。
+
+### Notes / 说明
+
+- Version bumped 1.2.3 → 1.2.4 (PATCH: robustness, tests and docs only; audit findings and report output are unchanged for well-formed input, and records without `collection_id` are now skipped with a warning instead of crashing).
+  版本 1.2.3 → 1.2.4（PATCH：仅健壮性、测试与文档；格式完好输入的审计发现与报告输出不变，缺 `collection_id` 的记录从崩溃改为跳过并告警）。
+
 ## [1.2.3] - 2026-09-25
 
 ### Fixed / 修复

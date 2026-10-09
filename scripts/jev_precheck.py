@@ -58,6 +58,31 @@ REQUEST_TIMEOUT = 30.0  # seconds per HTTP operation (SDK default 10 s is tight 
 FUTURE_TIMEOUT = 300  # seconds per bookmark across all its calls incl. SDK retries
 
 
+def _band_by_confidence(confidence, high, medium):
+    return "high" if confidence >= high else "medium" if confidence >= medium else "low"
+
+
+def assign_band_flat(current, mapped, confidence, high, medium):
+    """Band decision for flat mode. Pure function (no IO) so the precedence is
+    testable offline — this logic shipped the unknown-band bug fixed in 1.2.3
+    and previously had zero coverage because it was coupled to network calls.
+    Precedence: no mapping -> unknown (never a candidate); current location in
+    the mapped list -> consistent; otherwise by confidence against thresholds."""
+    if not mapped:
+        return "unknown"
+    if current in mapped:
+        return "consistent"
+    return _band_by_confidence(confidence, high, medium)
+
+
+def assign_band_tree(current, predicted, confidence, high, medium):
+    """Band decision for tree-descent mode (same reasoning, id equality instead
+    of membership)."""
+    if current == predicted:
+        return "consistent"
+    return _band_by_confidence(confidence, high, medium)
+
+
 def load_dump(path, key):
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -77,7 +102,11 @@ def build_tree(collections):
         if cid is not None:
             by_id[cid] = c
     govable = [c for c in collections
-               if c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
+               if c.get("collection_id") is not None
+               and c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
+    if len(govable) < len(collections):
+        sys.stderr.write("warning: %d record(s) without collection_id skipped\n"
+                         % (len(collections) - len(govable)))
     tops = [c for c in govable if c.get("parent_id") is None]
     children = {}
     for c in govable:
@@ -320,13 +349,8 @@ def main():
         if mode == "flat":
             pred = classify_flat(client, bm, categories, criteria)
             mapped = pred["mapped"]
-            if not mapped:
-                # category maps to no collection — cannot judge, never a candidate
-                band = "unknown"
-            else:
-                band = ("consistent" if current in mapped else
-                        "high" if pred["confidence"] >= args.high else
-                        "medium" if pred["confidence"] >= args.medium else "low")
+            band = assign_band_flat(current, mapped, pred["confidence"],
+                                    args.high, args.medium)
             predicted_title = ", ".join(
                 (by_id.get(cid, {}) or {}).get("title", str(cid)) for cid in mapped)
             return {
@@ -341,15 +365,8 @@ def main():
                 "calls": pred["calls"],
             }
         pred = classify(client, bm, by_id, children, s1_options, sub_specs)
-        conf = pred["confidence"]
-        if pred["predicted"] == current:
-            band = "consistent"
-        elif conf >= args.high:
-            band = "high"
-        elif conf >= args.medium:
-            band = "medium"
-        else:
-            band = "low"
+        band = assign_band_tree(current, pred["predicted"], pred["confidence"],
+                                args.high, args.medium)
         return {
             "bookmark_id": bm.get("bookmark_id"),
             "title": (bm.get("title") or "")[:80],
@@ -358,7 +375,7 @@ def main():
             "predicted_title": (by_id.get(pred["predicted"], {}) or {}).get("title"),
             "stage1_tree": pred["stage1_tree"],
             "stage1_confidence": round(pred["stage1_confidence"], 3),
-            "confidence": round(conf, 3),
+            "confidence": round(pred["confidence"], 3),
             "band": band,
             "calls": pred["calls"],
         }
