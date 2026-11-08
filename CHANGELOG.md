@@ -6,6 +6,24 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.2.5] - 2026-11-08
+
+### Fixed / 修复
+
+- R2 no longer reports a container (a collection whose content lives in its children — `total_bookmarks_count > bookmarks_count`, or it has child collections) as a "fragmented, merge candidate". Previously such a top-level tree with a few direct bookmarks was flagged with a merge suggestion while R4 simultaneously called it an acceptable hollow container; a shared `is_container` check now keeps R2 on genuine leaf fragments only.
+  R2 不再把容器（内容存放在子夹里——`total_bookmarks_count > bookmarks_count`，或本身有子夹）报成「碎片夹、合并候选」。此前这类直属书签很少的顶层树会被建议合并，同时 R4 又说它是可接受的空心容器，两条结论互相矛盾；现以统一的 `is_container` 判定让 R2 只作用于真正的叶子碎片。
+- Missing or blank collection titles no longer fabricate duplicate findings: the R1/R8 duplicate grouping and the R6 singular/plural grouping now skip records whose normalized title is empty, so two records without a `title` key no longer produce a phantom `P0 Duplicate title '' x2` from absent data.
+  缺失或空白标题的收藏夹不再伪造重名发现：R1/R8 重名分组与 R6 单复数分组现会跳过归一化后为空的标题，两条没有 `title` 字段的记录不再凭空产出 `P0 Duplicate title '' x2`。
+
+### Notes / 说明
+
+- Regression tests added (5 new cases: container vs leaf for R2, missing/blank titles for R1/R6/R8); suite grows from 40 to 45 tests (1 skip without `typesafe-sdk`).
+  新增回归测试（5 项：R2 的容器与叶子区分、缺/空标题对 R1/R6/R8）；测试套件由 40 项增至 45 项（未装 `typesafe-sdk` 时 1 项 skip）。
+- `references/audit-rules.md` R2 spec updated with the container exclusion so the prose matches the implementation.
+  `references/audit-rules.md` 的 R2 规格补充了容器排除说明，使文档与实现一致。
+- Version bumped 1.2.4 → 1.2.5 (PATCH: two audit-report correctness fixes plus one doc-sync line; no workflow, safety, or write-behavior changes).
+  版本 1.2.4 → 1.2.5（PATCH：两处审计报告正确性修复 + 一行文档同步；工作流、安全与写入行为均无变化）。
+
 ## [1.2.4] - 2026-10-09
 
 ### Fixed / 修复

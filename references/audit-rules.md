@@ -23,7 +23,7 @@ Group all non-excluded collections by normalized title (`strip().lower()`).
 
 ### R2 — Fragmented collections
 
-`bookmarks_count <= 5` (direct, not total) → **P2** merge candidate. Present count and parent chain; never merge without user confirmation. Deliberate small buckets (e.g. temporary or watch-later style) are the user's call — the report only flags.
+`bookmarks_count <= 5` (direct, not total) → **P2** merge candidate. Present count and parent chain; never merge without user confirmation. Deliberate small buckets (e.g. temporary or watch-later style) are the user's call — the report only flags. A collection whose content lives in its children (`total_bookmarks_count > bookmarks_count`, or it has child collections) is a **container, not a fragmented leaf** — it is never flagged by R2 (see R4); otherwise a large tree would be misreported as a merge candidate.
 
 ### R3 — Empty collections
 

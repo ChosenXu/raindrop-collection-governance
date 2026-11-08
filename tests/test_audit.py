@@ -134,6 +134,53 @@ class FrameworkTests(unittest.TestCase):
         self.assertEqual(warnings, [])
 
 
+class ContainerAndMissingFieldTests(unittest.TestCase):
+    """Regressions for the P1 fixes: R2 must not flag a container as a fragmented
+    merge candidate, and blank/missing titles must not fabricate duplicate findings."""
+
+    def test_r2_skips_container_with_children(self):
+        # Top-level container: 1 direct bookmark, the rest of the content lives in
+        # children. This is a hollow container (R4), not a fragmented leaf (R2).
+        cols = [col(1, "Design", direct=1, total=500),
+                col(11, "kid", parent=1, direct=499)]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R2")), 0)
+        self.assertEqual(len(find(findings, "R4")), 1)
+
+    def test_r2_skips_container_by_total_without_child_records(self):
+        # Container detection also works when the child records are absent:
+        # total_bookmarks_count > bookmarks_count is enough.
+        cols = [col(1, "Design", direct=2, total=200)]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R2")), 0)
+
+    def test_r2_still_flags_leaf_fragment(self):
+        # A genuine leaf whose direct count is its whole content is still flagged.
+        cols = [col(1, "Tiny", direct=3, total=3)]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R2")), 1)
+
+    def test_missing_titles_do_not_fabricate_duplicates(self):
+        # Two records with no "title" key must not become a phantom P0 "" duplicate.
+        cols = [{"collection_id": 1, "parent_id": 10, "bookmarks_count": 5,
+                 "total_bookmarks_count": 5},
+                {"collection_id": 2, "parent_id": 10, "bookmarks_count": 5,
+                 "total_bookmarks_count": 5},
+                col(10, "Root", direct=1)]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R1")), 0)
+        self.assertEqual(len(find(findings, "R6")), 0)
+        self.assertEqual(len(find(findings, "R8")), 0)
+
+    def test_blank_titles_do_not_fabricate_duplicates(self):
+        cols = [col(1, "   ", parent=10, direct=5),
+                col(2, "", parent=10, direct=5),
+                col(10, "Root", direct=1)]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R1")), 0)
+        self.assertEqual(len(find(findings, "R6")), 0)
+
+
 class RuleCoverageTests(unittest.TestCase):
     """Direct regression coverage for the rules the original suite missed
     (R4/R7/R8/R9/R10 are deterministic string/set logic — cheap to test)."""

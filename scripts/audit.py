@@ -299,9 +299,15 @@ def audit(collections, unsorted_items):
     findings = []
 
     # R1 / R8 — duplicate titles (case-insensitive); R8 casing is a sub-case
+    # A missing/blank title normalizes to "" and is NOT a real duplicate
+    # identity — grouping them would fabricate a phantom "duplicate ''" P0
+    # out of absent data.
     groups = {}
     for c in governable:
-        groups.setdefault(norm_title(c.get("title")), []).append(c)
+        key = norm_title(c.get("title"))
+        if not key:
+            continue
+        groups.setdefault(key, []).append(c)
     for n, members in sorted(groups.items()):
         if len(members) < 2:
             continue
@@ -343,9 +349,16 @@ def audit(collections, unsorted_items):
     parent_ids = {c.get("parent_id") for c in governable if c.get("parent_id") is not None}
     for c in sorted(governable, key=lambda x: x.get("bookmarks_count") or 0):
         count = c.get("bookmarks_count") or 0
+        total = c.get("total_bookmarks_count")
+        has_children = c["collection_id"] in parent_ids
+        # A container (small direct count, content carried by children) is not
+        # "fragmented": a merge recommendation here would contradict R4 and tell
+        # the user to merge a large tree. Only a leaf whose direct count is its
+        # whole content can be a fragmentation candidate.
+        is_container = has_children or (total is not None and total > count)
         ev = lambda lang: "%s (%s, %s %s)" % ((c.get("title") or ""), c["collection_id"],
                                               L("in_txt", lang), parent_chain(c, by_id, lang))
-        if 0 < count <= FRAGMENT_THRESHOLD:
+        if 0 < count <= FRAGMENT_THRESHOLD and not is_container:
             findings.append(finding(
                 "R2", "P2",
                 (L("r2_problem", "zh", n=count), L("r2_problem", "en", n=count)),
@@ -353,7 +366,7 @@ def audit(collections, unsorted_items):
                 STR["r2_suggestion"],
                 "merge"))
         elif count == 0:
-            if c["collection_id"] not in parent_ids:
+            if not has_children:
                 # R3 — empty (no children either)
                 findings.append(finding(
                     "R3", "P1",
@@ -399,9 +412,14 @@ def audit(collections, unsorted_items):
             "move-bookmarks"))
 
     # R6 — singular/plural pairs
+    # Skip blank titles for the same reason as R1: an empty base form must not
+    # become a grouping key.
     sing = {}
     for c in governable:
-        sing.setdefault(singular_form(c.get("title")), []).append(c)
+        key = singular_form(c.get("title"))
+        if not key:
+            continue
+        sing.setdefault(key, []).append(c)
     for base, members in sorted(sing.items()):
         variants = {m.get("title") or "" for m in members}
         if len(variants) > 1:
