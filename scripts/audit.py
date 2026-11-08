@@ -180,8 +180,13 @@ def L(key, lang, **kw):
 
 def load_records(path, list_key):
     """Return a list of dicts from a JSON dump (MCP-shaped object or bare list)."""
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except OSError as exc:
+        raise SystemExit("error: cannot read %s: %s" % (path, exc))
+    except json.JSONDecodeError as exc:
+        raise SystemExit("error: %s is not valid JSON: %s" % (path, exc))
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -195,7 +200,9 @@ def load_records(path, list_key):
 
 
 def norm_title(title):
-    return (title or "").strip().lower()
+    if not isinstance(title, str):
+        title = "" if title is None else str(title)
+    return title.strip().lower()
 
 
 def singular_form(title):
@@ -226,9 +233,12 @@ def with_collection_ids(collections):
 
 
 def md_escape(s):
-    """Escape a dynamic value for a Markdown table cell: pipes break the
-    column layout, newlines become visible <br> line breaks."""
-    return (s or "").replace("\n", " <br> ").replace("|", "\\|")
+    """Escape a dynamic value for a Markdown table cell: HTML metacharacters
+    are neutralized, pipes no longer break the column layout, and newlines
+    become visible <br> line breaks (the <br> is injected after escaping so
+    it stays live HTML)."""
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") \
+        .replace("\n", " <br> ").replace("|", "\\|")
 
 
 def parent_chain(col, by_id, lang):
@@ -237,7 +247,7 @@ def parent_chain(col, by_id, lang):
     seen = set()
     while cur is not None and cur["collection_id"] not in seen:
         seen.add(cur["collection_id"])
-        chain.append(cur.get("title") or "")
+        chain.append(str(cur.get("title") or ""))
         pid = cur.get("parent_id")
         cur = by_id.get(pid) if pid is not None else None
     if not chain:
@@ -402,7 +412,7 @@ def audit(collections, unsorted_items):
                 rows.append("- %s (%s)" % (title, domain))
             if n_unsorted > 30:
                 rows.append("- %s" % L("r5_more", lang, n=n_unsorted - 30))
-            return " <br> ".join(rows)
+            return "\n".join(rows)
 
         findings.append(finding(
             "R5", priority,
@@ -421,7 +431,13 @@ def audit(collections, unsorted_items):
             continue
         sing.setdefault(key, []).append(c)
     for base, members in sorted(sing.items()):
-        variants = {m.get("title") or "" for m in members}
+        # Only a genuine singular/plural pair: the members must differ beyond
+        # casing or surrounding whitespace (a casing/whitespace-only pair is
+        # R1/R8 territory, not R6).
+        norm_variants = {norm_title(m.get("title")) for m in members}
+        if len(norm_variants) < 2:
+            continue
+        variants = {str(m.get("title") or "") for m in members}
         if len(variants) > 1:
             variants_txt = " vs ".join(sorted(variants))
             findings.append(finding(
@@ -433,8 +449,8 @@ def audit(collections, unsorted_items):
                 "merge-or-rename"))
 
     # R7 — language mix
-    ascii_titles = [c for c in governable if not CJK_RE.search(c.get("title") or "")]
-    cjk_titles = [c for c in governable if CJK_RE.search(c.get("title") or "")]
+    ascii_titles = [c for c in governable if not CJK_RE.search(str(c.get("title") or ""))]
+    cjk_titles = [c for c in governable if CJK_RE.search(str(c.get("title") or ""))]
     if governable and len(ascii_titles) / len(governable) >= 0.8 and cjk_titles:
         for c in cjk_titles:
             findings.append(finding(
@@ -585,7 +601,7 @@ def framework(collections):
         children = child_map.get(tcol["collection_id"], [])
         total = tcol.get("total_bookmarks_count") or tcol.get("bookmarks_count") or 0
         rows.append({
-            "title": tcol.get("title") or "",
+            "title": str(tcol.get("title") or ""),
             "collection_id": tcol["collection_id"],
             "direct": tcol.get("bookmarks_count") or 0,
             "total": total,
@@ -676,9 +692,14 @@ def main():
         n_out = len(findings)
 
     if args.out:
-        with open(args.out, "w", encoding="utf-8") as f:
+        # Owner-only from creation (no 0644 -> chmod window): report holds titles.
+        fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except OSError:
+            pass
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(report)
-        os.chmod(args.out, 0o600)  # report contains bookmark titles — owner-only
         print("report [%s/%s] written to %s (%s, %d collections scanned)"
               % (lang, args.mode, args.out,
                  "%d findings" % n_out if args.mode == "audit" else "framework metrics",

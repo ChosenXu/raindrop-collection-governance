@@ -277,5 +277,53 @@ class RobustnessTests(unittest.TestCase):
         self.assertIn("collection_id", err.getvalue())
 
 
+class PluralAndEscapingTests(unittest.TestCase):
+    """Regressions for F3 (R6 ignores casing/whitespace-only pairs), F6
+    (Markdown/HTML escaping, R5 line breaks) and F7 (non-string titles)."""
+
+    def test_r6_casing_only_pair_not_flagged(self):
+        cols = [col(1, "Tools", parent=10, direct=5),
+                col(2, "tools", parent=10, direct=5),
+                col(10, "Root", direct=1)]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R6")), 0)
+
+    def test_r6_whitespace_only_pair_not_flagged(self):
+        cols = [col(1, "Design", parent=10, direct=5),
+                col(2, "Design ", parent=10, direct=5),
+                col(10, "Root", direct=1)]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R6")), 0)
+
+    def test_r6_genuine_pair_still_flagged(self):
+        cols = [col(1, "Tool", parent=10, direct=5),
+                col(2, "Tools", parent=20, direct=5),
+                col(10, "A", direct=1), col(20, "B", direct=1)]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertEqual(len(find(findings, "R6")), 1)
+
+    def test_non_string_title_does_not_crash(self):
+        cols = [{"collection_id": 1, "title": 123, "parent_id": None,
+                 "bookmarks_count": 3, "total_bookmarks_count": 3}]
+        _, findings, _ = audit.audit(cols, [])
+        self.assertIsInstance(findings, list)
+        self.assertIn("123", audit.render(cols, [], None, findings, "en"))
+
+    def test_html_metacharacters_escaped(self):
+        cols = [col(1, "A<B>&C", direct=3)]
+        _, findings, _ = audit.audit(cols, [])
+        md = audit.render(cols, [], None, findings, "en")
+        self.assertIn("A&lt;B&gt;&amp;C", md)
+        self.assertNotIn("A<B>", md)
+
+    def test_r5_evidence_keeps_line_breaks(self):
+        cols = [col(1, "Solo", direct=1)]
+        items = [{"title": "x<y", "domain": "a.com"}, {"title": "z", "domain": "b.com"}]
+        _, findings, _ = audit.audit(cols, items)
+        md = audit.render(cols, items, None, findings, "en")
+        self.assertIn(" <br> ", md)
+        self.assertIn("x&lt;y", md)
+
+
 if __name__ == "__main__":
     unittest.main()

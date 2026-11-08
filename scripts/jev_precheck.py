@@ -84,8 +84,13 @@ def assign_band_tree(current, predicted, confidence, high, medium):
 
 
 def load_dump(path, key):
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except OSError as exc:
+        raise SystemExit("error: cannot read %s: %s" % (path, exc))
+    except json.JSONDecodeError as exc:
+        raise SystemExit("error: %s is not valid JSON: %s" % (path, exc))
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -104,9 +109,11 @@ def build_tree(collections):
     govable = [c for c in collections
                if c.get("collection_id") is not None
                and c.get("collection_id") not in (UNSORTED_ID, TRASH_ID)]
-    if len(govable) < len(collections):
-        sys.stderr.write("warning: %d record(s) without collection_id skipped\n"
-                         % (len(collections) - len(govable)))
+    # Count only records genuinely missing collection_id; excluding Unsorted/
+    # Trash is intentional and must not be reported as a data problem.
+    missing = sum(1 for c in collections if c.get("collection_id") is None)
+    if missing:
+        sys.stderr.write("warning: %d record(s) without collection_id skipped\n" % missing)
     tops = [c for c in govable if c.get("parent_id") is None]
     children = {}
     for c in govable:
@@ -117,7 +124,7 @@ def build_tree(collections):
 
 
 def node_desc(node, children):
-    d = node.get("title") or ""
+    d = str(node.get("title") or "")
     kids = children.get(node.get("collection_id"), [])
     if kids:
         d += " — subcategories: " + ", ".join(k.get("title") or "" for k in kids)
@@ -187,7 +194,7 @@ def classify_flat(client, bm, categories, criteria):
     for every bookmark). A bookmark is a relocation candidate only when its
     current collection is NOT among the predicted category's mapped collections."""
     state = {"bookmark": {
-        "title": bm.get("title") or "",
+        "title": str(bm.get("title") or ""),
         "tags": bm.get("tags") or [],
         "domain": bm.get("domain") or "",
     }}
@@ -210,7 +217,7 @@ def classify(client, bm, by_id, children, s1_options, sub_specs):
     used to be rebuilt for every bookmark); `by_id` is passed explicitly instead
     of a hidden module global. Returns prediction dict."""
     state = {"bookmark": {
-        "title": bm.get("title") or "",
+        "title": str(bm.get("title") or ""),
         "tags": bm.get("tags") or [],
         "domain": bm.get("domain") or "",
     }}
@@ -352,10 +359,10 @@ def main():
             band = assign_band_flat(current, mapped, pred["confidence"],
                                     args.high, args.medium)
             predicted_title = ", ".join(
-                (by_id.get(cid, {}) or {}).get("title", str(cid)) for cid in mapped)
+                str((by_id.get(cid, {}) or {}).get("title", str(cid))) for cid in mapped)
             return {
                 "bookmark_id": bm.get("bookmark_id"),
-                "title": (bm.get("title") or "")[:80],
+                "title": str(bm.get("title") or "")[:80],
                 "from": current,
                 "predicted_category": pred["category"],
                 "predicted": mapped,
@@ -369,7 +376,7 @@ def main():
                                 args.high, args.medium)
         return {
             "bookmark_id": bm.get("bookmark_id"),
-            "title": (bm.get("title") or "")[:80],
+            "title": str(bm.get("title") or "")[:80],
             "from": current,
             "predicted": pred["predicted"],
             "predicted_title": (by_id.get(pred["predicted"], {}) or {}).get("title"),
@@ -420,9 +427,13 @@ def main():
     }
     out_path = args.out or os.path.join(
         os.path.dirname(os.path.abspath(args.bookmarks)), "jev-precheck-results.json")
-    with open(out_path, "w", encoding="utf-8") as f:
+    fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)  # results contain bookmark titles — owner-only
+    except OSError:
+        pass
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.chmod(out_path, 0o600)  # results contain bookmark titles — owner-only
     print("DONE bands=%s calls=%d -> %s" % (bands, calls_total, out_path))
 
 

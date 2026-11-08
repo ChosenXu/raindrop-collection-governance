@@ -5,7 +5,9 @@ Run from the skill root:
     python3 -m unittest discover -s tests -v
 """
 
+import contextlib
 import importlib
+import io
 import os
 import subprocess
 import sys
@@ -72,6 +74,36 @@ class ProbeTests(unittest.TestCase):
                            capture_output=True, text=True)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("thresholds", r.stderr)
+
+
+class BuildTreeWarningTests(unittest.TestCase):
+    """F4: build_tree must not warn about intentionally excluded Unsorted/Trash."""
+
+    def _run(self, cols):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            by_id, gov, tops, children = jp.build_tree(cols)
+        return err.getvalue(), gov
+
+    def test_unsorted_and_trash_not_reported_missing(self):
+        cols = [{"collection_id": 1, "title": "Solo", "parent_id": None},
+                {"collection_id": -1, "title": "Unsorted", "parent_id": None},
+                {"collection_id": -99, "title": "Trash", "parent_id": None}]
+        err, gov = self._run(cols)
+        self.assertEqual(err, "")
+        self.assertEqual(len(gov), 1)
+
+    def test_genuinely_missing_id_warns(self):
+        cols = [{"collection_id": 1, "title": "Solo", "parent_id": None},
+                {"title": "NoId", "parent_id": None}]
+        err, gov = self._run(cols)
+        self.assertIn("without collection_id", err)
+        self.assertIn("1 record", err)
+
+    def test_load_dump_missing_file_clean_error(self):
+        with self.assertRaises(SystemExit) as cm:
+            jp.load_dump("/nonexistent/xyz.json", "collections")
+        self.assertIn("cannot read", str(cm.exception))
 
 
 if __name__ == "__main__":

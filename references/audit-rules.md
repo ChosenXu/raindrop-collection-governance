@@ -44,7 +44,7 @@ Report titles + domains (up to 30 rows, then summary). Suggestion: batch-assign 
 
 ### R6 — Singular/plural title pairs
 
-Two distinct titles normalize to the same string after `lower()` + strip trailing `s` (e.g. `Tool`/`Tools`, `Product`/`Products`) → **P1**. Recommend one canonical form; if both exist with content, treat as R1 duplicates after the user picks the canonical form.
+Two distinct titles normalize to the same string after `lower()` + strip trailing `s` (e.g. `Tool`/`Tools`, `Product`/`Products`) → **P1**. Only pairs that differ beyond casing/whitespace are reported — a casing-only pair (`Tools`/`tools`) is R1/R8, not R6. The trailing-`s` heuristic can still coincide on unrelated bases (e.g. `New`/`News`); such coincidental matches are a known limitation. Recommend one canonical form; if both exist with content, treat as R1 duplicates after the user picks the canonical form.
 
 ### R7 — Language mix
 
@@ -64,7 +64,7 @@ Depth > 3 (top-level = depth 1) → **P2** per affected collection. Suggest flat
 
 ## Framework review rules (FR1–FR5)
 
-Tree-level rules for the framework-review mode (`audit.py --mode framework`). FR1–FR3 are deterministic and implemented in the script; FR4–FR5 are agent-layer judgments made from actual collection contents.
+Tree-level rules for the framework-review mode (`audit.py --mode framework`). FR1–FR3 are deterministic and implemented in the script; FR4–FR5 are agent-layer judgments made from actual collection contents. The P1/P2 labels on FR1–FR3 are advisory — the framework report's warnings table shows only the rule id and the finding, not a priority column.
 
 ### FR1 — Flat-heavy top-level (deterministic)
 
@@ -91,7 +91,7 @@ Top-level collections organized by different logics (domain / content type / fun
 `audit.py` renders Markdown with these sections, in order:
 
 1. **Overview** — total collections / bookmarks / tags, top-level count, max depth, Unsorted count
-2. **P0 findings** — table: finding, evidence (ids + parent chain), suggested operation, priority
+2. **P0 findings** — table columns: rule, finding, evidence (ids + parent chain), suggestion, operation (the priority is the section heading, not a column)
 3. **P1 findings** — same table shape
 4. **P2 findings** — same table shape
 5. **Operation summary** — counts per operation type (merge / rename / re-parent / create / move-bookmarks), ready to be turned into a Phase 2 plan

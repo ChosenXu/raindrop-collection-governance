@@ -6,6 +6,32 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.2.6] - 2026-11-08
+
+### Fixed / 修复
+
+- R6 no longer reports casing-only or whitespace-only title pairs (`Tools`/`tools`, `Design`/`Design `) as singular/plural — those are already R1/R8; only pairs that differ beyond case/whitespace are flagged. The trailing-`s` heuristic can still coincide on unrelated bases (e.g. `New`/`News`); that limitation is now documented.
+  R6 不再把仅大小写或空白差异的标题对（`Tools`/`tools`、`Design`/`Design `）当作单复数报告——它们本属 R1/R8；现仅对超出大小写/空白差异的标题对报告。尾随 `s` 的启发式仍可能误中无关词干（如 `New`/`News`），此限制已在文档注明。
+- `jev_precheck.py`'s `build_tree` warning no longer counts the intentionally excluded Unsorted/Trash records as "without collection_id" — only records genuinely missing the field are reported.
+  `jev_precheck.py` 的 `build_tree` 告警不再把有意排除的 Unsorted/Trash 记录算作「缺少 collection_id」——只有真正缺该字段的记录才告警。
+- Missing or unreadable input files now exit with a clean `error: cannot read ...` message (malformed JSON: `error: ... is not valid JSON`) instead of a raw traceback, in both `audit.py` and `jev_precheck.py`.
+  `audit.py` 与 `jev_precheck.py` 在输入文件缺失/不可读时现以干净的 `error: cannot read ...` 退出（坏 JSON 则 `error: ... is not valid JSON`），不再抛裸 traceback。
+- Report and pre-screener output files are created owner-only (0600) from the moment they exist (`os.open` + `fchmod`), closing the brief world-readable window left by writing and then `chmod`-ing.
+  报告与预筛器输出文件自创建起即为仅属主可读（0600，`os.open` + `fchmod`），堵上「先写后 chmod」留下的短暂全员可读窗口。
+- Non-string collection titles (e.g. a numeric `title`) no longer crash the audit, the framework review, or the pre-screener — every title read is now coerced with `str()`.
+  非字符串的收藏夹标题（如数字 `title`）不再让盘点、框架评审或预筛器崩溃——所有标题读取现统一 `str()` 兜底。
+- Markdown report cells now neutralize HTML metacharacters (`&`, `<`, `>`) in titles; the R5 Unsorted table keeps its intended `<br>` line breaks because rows are joined with newlines that the escaper converts after escaping.
+  Markdown 报告单元格现会中和标题中的 HTML 元字符（`&`、`<`、`>`）；R5 未分类表格通过「换行→转义后转 `<br>`」保留预期换行。
+
+### Notes / 说明
+
+- Regression tests added (R6 casing/whitespace vs genuine pair, non-string title, HTML escaping, R5 line breaks, jev `build_tree` warning, clean IO errors); suite grows from 45 to 54 tests (1 skip without `typesafe-sdk`).
+  新增回归测试（R6 大小写/空白对与真实单复数、非字符串标题、HTML 转义、R5 换行、jev `build_tree` 告警、干净 IO 报错）；测试套件由 45 项增至 54 项（未装 `typesafe-sdk` 时 1 项 skip）。
+- `references/audit-rules.md` synced: R6 casing/whitespace scope and heuristic limitation, and the report-format column list now matches the rendered tables.
+  `references/audit-rules.md` 同步：R6 的大小写/空白范围与启发式限制，报告格式列清单与渲染表格对齐。
+- Version bumped 1.2.5 → 1.2.6 (PATCH: report-correctness and hardening fixes; no workflow, safety-gate, or write-behavior changes).
+  版本 1.2.5 → 1.2.6（PATCH：报告正确性与加固修复；工作流、安全门禁与写入行为均无变化）。
+
 ## [1.2.5] - 2026-11-08
 
 ### Fixed / 修复
