@@ -6,6 +6,18 @@ All notable changes to this skill are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 格式参考 Keep a Changelog，版本号遵循语义化版本（SemVer）。
 
+## [1.2.7] - 2026-11-09
+
+### Changed / 变更
+
+- Report output (`audit.py`) and pre-screener results (`jev_precheck.py`) are now written atomically (same-directory temp created 0600 → `os.replace`), so an interrupted run can no longer leave a half-written file behind. The owner-only (0600-from-creation) guarantee from v1.2.6 is preserved, and a failed write cleans up its temp and re-raises.
+  报告输出（`audit.py`）与预筛器结果（`jev_precheck.py`）现在改为原子写（同目录 temp，创建即 0600 → `os.replace`），中断的运行不再留下半写文件。v1.2.6 的「创建即 0600」保证保留；写入失败会清理 temp 并重新抛出。
+
+### Notes / 说明
+
+- Version bumped 1.2.6 → 1.2.7 (PATCH: atomic report/pre-screener writes; no behavior or payload/format changes). Test suite unchanged at 54 (1 skip without `typesafe-sdk`).
+  版本 1.2.6 → 1.2.7（PATCH：报告/预筛器原子写；行为与载荷/格式无变化）。测试套件仍为 54 项（未装 `typesafe-sdk` 时 1 项 skip）。
+
 ## [1.2.6] - 2026-11-08
 
 ### Fixed / 修复

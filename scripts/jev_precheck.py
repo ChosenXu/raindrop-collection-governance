@@ -427,13 +427,24 @@ def main():
     }
     out_path = args.out or os.path.join(
         os.path.dirname(os.path.abspath(args.bookmarks)), "jev-precheck-results.json")
-    fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # Atomic: same-dir temp (0600) + os.replace so an interrupted run cannot
+    # leave a half-written results file behind.
+    tmp = out_path + ".tmp"
     try:
-        os.fchmod(fd, 0o600)  # results contain bookmark titles — owner-only
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)  # results contain bookmark titles — owner-only
+        except OSError:
+            pass
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, out_path)
     except OSError:
-        pass
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
     print("DONE bands=%s calls=%d -> %s" % (bands, calls_total, out_path))
 
 

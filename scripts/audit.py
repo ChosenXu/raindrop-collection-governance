@@ -693,13 +693,24 @@ def main():
 
     if args.out:
         # Owner-only from creation (no 0644 -> chmod window): report holds titles.
-        fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # Atomic: same-dir temp (0600) + os.replace so an interrupted run cannot
+        # leave a half-written report behind.
+        tmp = args.out + ".tmp"
         try:
-            os.fchmod(fd, 0o600)
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError:
+                pass
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(report)
+            os.replace(tmp, args.out)
         except OSError:
-            pass
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(report)
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
         print("report [%s/%s] written to %s (%s, %d collections scanned)"
               % (lang, args.mode, args.out,
                  "%d findings" % n_out if args.mode == "audit" else "framework metrics",
